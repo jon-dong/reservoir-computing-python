@@ -45,6 +45,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils import check_random_state
 from scipy.linalg import lstsq
+import sklearn.linear_model
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
@@ -132,7 +133,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Performs a linear regression """
         if self.train_method == 'explicit':
             output_w, res, rnk, s = lstsq(concat_states, y)
-            return output_w
+        elif self.train_method == 'explicitsklearn':
+            clf = sklearn.linear_model.LinearRegression(fit_intercept=False)
+            clf.fit(concat_states, y)
+            output_w = clf.coef_.T
+        elif self.train_method == 'sgd':
+            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False)
+            clf.fit(concat_states, y)
+            output_w = clf.coef_.T
+        return output_w
 
     def output(self, concat_states):
         """ Computes the output given reservoir states and output weights """

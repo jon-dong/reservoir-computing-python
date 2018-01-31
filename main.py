@@ -12,10 +12,11 @@ from __future__ import print_function
 
 from reservoir import Reservoir
 import data
+import numpy as np
 
 if __name__ == "__main__":
-    input_data, y = data.narma()
-    b = Reservoir(n_res=500)
+    input_data, y = data.mackey_glass()
+    b = Reservoir(n_res=500, train_method='sgd')
     print(b)
     b.fit(input_data, y)
     print(b.score(input_data, y[b.forget:]))
