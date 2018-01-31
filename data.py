@@ -17,9 +17,6 @@ Output:
 
 To-do:
     - Add other time series from the Matlab Code
-
-Created: 2017/11/22 by Jonathan Dong
-Last modified: 2017/11/23 by Jonathan Dong
 """
 
 import numpy as np

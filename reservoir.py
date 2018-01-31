@@ -38,9 +38,6 @@ Internal attributes:
 
 To-do:
     -
-
-Created: 2017/11/22 by Jonathan Dong
-Last modified: 2017/11/23 by Jonathan Dong
 """
 
 import numpy as np
@@ -97,7 +94,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                                   size=(self.n_res, self.n_res))
 
     def reset(self):
-        """ Resets the reservoir state, for new runs< """
+        """ Resets the reservoir state, for new runs """
         self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res,))
 
     def encode(self, mat):
@@ -155,5 +152,4 @@ class Reservoir(BaseEstimator, RegressorMixin):
         enc_input_data = self.encode(input_data)
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
         res = self.output(concat_states)
-        print(res.shape)
         return res

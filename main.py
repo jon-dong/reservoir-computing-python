@@ -14,7 +14,6 @@ from reservoir import Reservoir
 import data
 
 if __name__ == "__main__":
-    print('Hello world!')
     input_data, y = data.narma()
     b = Reservoir(n_res=500)
     print(b)
