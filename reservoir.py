@@ -112,7 +112,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.activation_fun == 'tanh':
             return lambda x: np.tanh(x)
         elif self.activation_fun == 'phase':
-            return lambda x: np.exp(1j * x * self.activation_param)
+            return lambda x: np.exp(1j * abs(x) * self.activation_param)
+        elif self.activation_fun == 'binary':
+            return lambda x: x > self.activation_param
 
     def iterate(self, input_data):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
@@ -138,7 +140,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         elif self.train_method == 'sgd':
-            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False)
+            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=1000, tol=1e-5, alpha=1e0)
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         return output_w
