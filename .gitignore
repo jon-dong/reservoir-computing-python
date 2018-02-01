@@ -1,2 +1,3 @@
 rcenv
 __pycache__
+*.dat

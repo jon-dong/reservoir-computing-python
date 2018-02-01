@@ -95,6 +95,38 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     size=(self.n_res, self.n_res)) + \
                     1j * self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
                     size=(self.n_res, self.n_res))
+        elif self.random_projection == 'out of core':
+            n_batch = 2
+            step = int(self.n_res / n_batch)
+            if self.weights_type == 'gaussian':
+                self.input_w = np.memmap('input_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.res_w = np.memmap('res_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
+
+                for i_batch in range(n_batch):
+                    self.input_w[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                        size=(step, self.n_input))
+                    for j_batch in range(n_batch):
+                        self.res_w[i_batch * step : (i_batch+1) * step, j_batch * step : (j_batch+1) * step] = \
+                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                            size=(step, step))
+            elif self.weights_type == 'complex gaussian':
+                self.input_w_re = np.memmap('input_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.input_w_im = np.memmap('input_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.res_w_re = np.memmap('res_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
+                self.res_w_im = np.memmap('res_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
+
+                for i_batch in range(n_batch):
+                    self.input_w_re[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                        size=(step, self.n_input))
+                    self.input_w_im[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                        size=(step, self.n_input))
+                    for j_batch in range(n_batch):
+                        self.res_w_re[i_batch * step : (i_batch+1) * step, j_batch * step : (j_batch+1) * step] = \
+                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                            size=(step, step))
+                        self.res_w_im[i_batch * step : (i_batch+1) * step, j_batch * step : (j_batch+1) * step] = \
+                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                            size=(step, step))
 
     def reset(self):
         """ Resets the reservoir state, for new runs """
@@ -141,6 +173,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.random_projection == 'simulation':
                 self.state = act(np.dot(self.input_w, input_data[time_step, :]) +
                                  np.dot(self.res_w, self.state))
+            if self.random_projection == 'out of core':
+                if self.weights_type == 'gaussian':
+                    self.state = act(np.dot(self.input_w, input_data[time_step, :]) + 
+                        np.dot(self.res_w, self.state))
+                elif self.weights_type == 'complex gaussian':
+                    self.state = act(np.dot(self.input_w_re, input_data[time_step, :]) + 
+                        1j * np.dot(self.input_w_im, input_data[time_step, :]) +
+                        np.dot(self.res_w_re, self.state) +
+                        1j * np.dot(self.res_w_im, self.state))
             if time_step >= self.forget:
                 concat_states[time_step-self.forget, :] = np.concatenate([self.state, input_data[time_step, :]])
         return concat_states
