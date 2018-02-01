@@ -82,17 +82,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         if self.random_projection == 'simulation':
             if self.weights_type == 'gaussian':
-                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale, size=(self.n_res, self.n_input))
+                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                    size=(self.n_res, self.n_input))
                 self.res_w = self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
-                                                      size=(self.n_res, self.n_res))
+                    size=(self.n_res, self.n_res))
             elif self.weights_type == 'complex gaussian':
-                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale,
-                                                        size=(self.n_res, self.n_input)) + \
-                    1j * self.random_state.normal(loc=0., scale=self.input_scale, size=(self.n_res, self.n_input))
+                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input),
+                    size=(self.n_res, self.n_input)) + \
+                    1j * self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                    size=(self.n_res, self.n_input))
                 self.res_w = self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
-                                                      size=(self.n_res, self.n_res)) + \
+                    size=(self.n_res, self.n_res)) + \
                     1j * self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
-                                                  size=(self.n_res, self.n_res))
+                    size=(self.n_res, self.n_res))
 
     def reset(self):
         """ Resets the reservoir state, for new runs """
@@ -104,6 +106,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return mat > self.encoding_param
         elif self.encoding_method == 'phase':
             return np.exp(1j * mat * self.encoding_param)
+        elif self.encoding_method == 'realbinary':
+            sequence_length, input_size = mat.shape
+
+            mini = -0.55  # self.encoding_param[0]
+            maxi = 0.55  # self.encoding_param[1]
+            step = (maxi - mini) / self.n_input
+            
+            enc_input_data = np.zeros((sequence_length, self.n_input))
+            for i_input in range(self.n_input):
+                enc_input_data[:, i_input] = np.ravel(mat > mini + i_input * step)
+
+            return enc_input_data
         elif self.encoding_method is None:
             return mat
 
@@ -120,15 +134,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
         sequence_length, input_size = input_data.shape
 
-        concat_states = np.empty((sequence_length-self.forget, self.n_res))
+        concat_states = np.empty((sequence_length-self.forget, self.n_res+self.n_input))
         act = self.activation()
 
         for time_step in range(sequence_length):
             if self.random_projection == 'simulation':
-                self.state = act(np.dot(self.input_w, input_data[time_step, 0:1]) +
+                self.state = act(np.dot(self.input_w, input_data[time_step, :]) +
                                  np.dot(self.res_w, self.state))
             if time_step >= self.forget:
-                concat_states[time_step-self.forget, :] = self.state
+                concat_states[time_step-self.forget, :] = np.concatenate([self.state, input_data[time_step, :]])
         return concat_states
 
     def train(self, concat_states, y):
@@ -140,7 +154,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         elif self.train_method == 'sgd':
-            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=1000, tol=1e-5, alpha=1e0)
+            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=1000, tol=1e-5, alpha=5e-1)
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         return output_w

@@ -18,9 +18,10 @@ import seaborn as sns
 
 if __name__ == "__main__":
     input_data, y = data.mackey_glass()
-    b = Reservoir(n_res=1000, input_scale=2, train_method='sgd',
+    b = Reservoir(n_res=2000, input_scale=2, train_method='sgd',
     	weights_type='complex gaussian', 
-    	activation_fun='binary', activation_param=.5)
+    	activation_fun='binary', activation_param=.4, 
+    	encoding_method='realbinary', n_input = 1000)
     print(b)
 
     start = time.time()
@@ -30,6 +31,7 @@ if __name__ == "__main__":
 
     print(b.score(input_data, y[b.forget:]))
 
+    input_data, y = data.mackey_glass()
     n_plot = 500
     sns.set_style("darkgrid")
     if n_plot == -1:

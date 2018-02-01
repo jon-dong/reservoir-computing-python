@@ -70,7 +70,7 @@ def mackey_glass(sequence_length=1000, tau=17, random_state=None):
         (1 + input_data[iSequence - memory_length] ** n);
 
     input_data = np.tanh(input_data - 1)
-    y = np.roll(input_data, -1)
+    y = np.ravel(np.roll(input_data, -1))
     return input_data, y
 
 
