@@ -17,33 +17,45 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 if __name__ == "__main__":
-    input_data, y = data.mackey_glass()
-    b = Reservoir(n_res=10000, input_scale=2, train_method='ridge',
-    	weights_type='complex gaussian', random_projection='simulation',
-    	activation_fun='binary', activation_param=.4,  
-    	encoding_method='realbinary', n_input = 1000)
-    print(b)
+    params = [2e2, 4e2, 8e2, 1.6e3, 3.2e3, 6.4e3, 1.28e4]
+    # params = [2e2, 1e3]
+    n_params = len(params)
+    n_repeat = 2
 
-    start = time.time()
-    b.fit(input_data, y)
-    end = time.time()
-    print(end-start)
+    times = np.empty((n_repeat, n_params))
+    results = np.empty((n_repeat, n_params))
 
-    print(b.score(input_data, y[b.forget:]))
+    i_param = 0
+    for param in params:
+        for i_repeat in range(n_repeat):
+            try:
+                input_data, y = data.mackey_glass(sequence_length=2000)
+                b = Reservoir(n_res=int(param), input_scale=2, train_method='ridge',
+                	weights_type='complex gaussian', random_projection='simulation',
+                	activation_fun='binary', activation_param=2,
+                	encoding_method='realbinary', n_input = 1000)
+                print(b)
 
-    input_data, y = data.mackey_glass()
-    n_plot = 500
-    sns.set_style("darkgrid")
-    if n_plot == -1:
-        plt.plot(y[b.forget:])
-        plt.plot(b.predict(input_data[:]))
-    elif n_plot>0:
-    	plt.plot(y[b.forget:b.forget+n_plot])
-    	plt.plot(b.predict(input_data[:n_plot+100]))
-    if n_plot != 0:
-    	plt.show()
+                start = time.time()
+                b.fit(input_data, y)
+                end = time.time()
+                print(end - start)
 
+                input_data, y = data.mackey_glass()
+                current_score = b.score(input_data, y[b.forget:])
+                print(current_score)
 
-    # b.initialize()
-    # test = b.iterate(input_data)
-    # print(test)
+                times[i_repeat, i_param] = end - start
+                results[i_repeat, i_param] = current_score
+            except:
+                times[i_repeat, i_param] = None
+                results[i_repeat, i_param] = None
+
+        with open('out/times.out', 'w') as f:
+            print(times, file=f)
+        with open('out/results.out', 'w') as f:
+            print(results, file=f)
+        with open('out/params.out', 'w') as f:
+            print(params, file=f)
+
+        i_param += 1

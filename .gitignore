@@ -1,3 +1,4 @@
 rcenv
 __pycache__
 *.dat
+*.out

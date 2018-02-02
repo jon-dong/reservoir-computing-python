@@ -195,7 +195,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         elif self.train_method == 'ridge':
-            clf = sklearn.linear_model.Ridge(fit_intercept=False, alpha=1e1)
+            clf = sklearn.linear_model.Ridge(fit_intercept=False, alpha=5e1)
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         elif self.train_method == 'sgd':
