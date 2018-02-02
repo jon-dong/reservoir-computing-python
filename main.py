@@ -13,11 +13,8 @@ import time
 from reservoir import Reservoir
 import data
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-
 if __name__ == "__main__":
-    params = np.logspace(1e4, 4e4, 5)
+    params = np.logspace(4, 5, 10)
     n_params = len(params)
     n_repeat = 1
 
