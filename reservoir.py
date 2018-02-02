@@ -46,6 +46,7 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils import check_random_state
 from scipy.linalg import lstsq
 import sklearn.linear_model
+import time
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
@@ -212,8 +213,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir with training input, fits the output weights """
         self.initialize()
         enc_input_data = self.encode(input_data)
+        start = time.time()
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
+        middle = time.time()
         self.output_w = self.train(concat_states, y[self.forget:])
+        end = time.time()
+        self.iterate_timer = middle - start
+        self.train_timer = end - start
         return self
 
     def predict(self, input_data):  # , y=None):
