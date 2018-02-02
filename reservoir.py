@@ -99,8 +99,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
             n_batch = 2
             step = int(self.n_res / n_batch)
             if self.weights_type == 'gaussian':
-                self.input_w = np.memmap('input_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
-                self.res_w = np.memmap('res_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
+                self.input_w = np.memmap('data/input_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.res_w = np.memmap('data/res_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
 
                 for i_batch in range(n_batch):
                     self.input_w[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
@@ -110,10 +110,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
                         self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
                             size=(step, step))
             elif self.weights_type == 'complex gaussian':
-                self.input_w_re = np.memmap('input_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
-                self.input_w_im = np.memmap('input_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
-                self.res_w_re = np.memmap('res_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
-                self.res_w_im = np.memmap('res_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
+                self.input_w_re = np.memmap('data/input_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.input_w_im = np.memmap('data/input_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.res_w_re = np.memmap('data/res_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
+                self.res_w_im = np.memmap('data/res_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
 
                 for i_batch in range(n_batch):
                     self.input_w_re[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
@@ -160,7 +160,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.activation_fun == 'phase':
             return lambda x: np.exp(1j * abs(x) * self.activation_param)
         elif self.activation_fun == 'binary':
-            return lambda x: x > self.activation_param
+            return lambda x: abs(x) > self.activation_param
 
     def iterate(self, input_data):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
@@ -194,8 +194,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf = sklearn.linear_model.LinearRegression(fit_intercept=False)
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
+        elif self.train_method == 'ridge':
+            clf = sklearn.linear_model.Ridge(fit_intercept=False, alpha=1e1)
+            clf.fit(concat_states, y)
+            output_w = clf.coef_.T
         elif self.train_method == 'sgd':
-            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=1000, tol=1e-5, alpha=5e-1)
+            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=50000, tol=1e-5, alpha=5e-1)
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         return output_w

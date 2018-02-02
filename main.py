@@ -18,9 +18,9 @@ import seaborn as sns
 
 if __name__ == "__main__":
     input_data, y = data.mackey_glass()
-    b = Reservoir(n_res=1000, input_scale=2, train_method='sgd',
-    	weights_type='complex gaussian', random_projection='out of core',
-    	activation_fun='binary', activation_param=.4, 
+    b = Reservoir(n_res=10000, input_scale=2, train_method='ridge',
+    	weights_type='complex gaussian', random_projection='simulation',
+    	activation_fun='binary', activation_param=.4,  
     	encoding_method='realbinary', n_input = 1000)
     print(b)
 
