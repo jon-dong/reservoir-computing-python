@@ -17,10 +17,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 if __name__ == "__main__":
-    params = [2e2, 4e2, 8e2, 1.6e3, 3.2e3, 6.4e3, 1.28e4]
-    # params = [2e2, 1e3]
+    params = np.logspace(1e4, 4e4, 5)
     n_params = len(params)
-    n_repeat = 2
+    n_repeat = 1
 
     times = np.empty((n_repeat, n_params))
     results = np.empty((n_repeat, n_params))

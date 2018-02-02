@@ -87,13 +87,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.res_w = self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
                     size=(self.n_res, self.n_res))
             elif self.weights_type == 'complex gaussian':
-                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input),
-                    size=(self.n_res, self.n_input)) + \
-                    1j * self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                self.input_w = 1j * self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input),
                     size=(self.n_res, self.n_input))
-                self.res_w = self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
-                    size=(self.n_res, self.n_res)) + \
-                    1j * self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
+                self.input_w += self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                    size=(self.n_res, self.n_input))
+                self.res_w = 1j * self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
+                    size=(self.n_res, self.n_res))
+                self.res_w += self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
                     size=(self.n_res, self.n_res))
         elif self.random_projection == 'out of core':
             n_batch = 2
