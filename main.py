@@ -18,6 +18,7 @@ if __name__ == "__main__":
     n_params = len(params)
     n_repeat = 1
 
+    init_times = np.empty((n_repeat, n_params))
     iterate_times = np.empty((n_repeat, n_params))
     train_times = np.empty((n_repeat, n_params))
     results = np.empty((n_repeat, n_params))
@@ -42,13 +43,18 @@ if __name__ == "__main__":
                 current_score = b.score(input_data, y[b.forget:])
                 print(current_score)
 
-                iterate_times[i_repeat, i_param] = self.iterate_timer
-                train_times[i_repeat, i_param] = self.train_timer
+                init_times[i_repeat, i_param] = b.init_timer
+                iterate_times[i_repeat, i_param] = b.iterate_timer
+                train_times[i_repeat, i_param] = b.train_timer
                 results[i_repeat, i_param] = current_score
             except:
-                times[i_repeat, i_param] = None
+                init_times[i_repeat, i_param] = None
+                iterate_times[i_repeat, i_param] = None
+                train_times[i_repeat, i_param] = None
                 results[i_repeat, i_param] = None
 
+        with open('out/init_times.out', 'w') as f:
+            print(init_times, file=f)
         with open('out/iterate_times.out', 'w') as f:
             print(iterate_times, file=f)
         with open('out/train_times.out', 'w') as f:
@@ -59,3 +65,9 @@ if __name__ == "__main__":
             print(params, file=f)
 
         i_param += 1
+
+    print(init_times)
+    print(iterate_times)
+    print(train_times)
+    print(results)
+    print(params)
