@@ -53,7 +53,7 @@ def narma(sequence_length=1000, random_state=None):
     return np.tanh(input_data), np.tanh(y)
 
 
-def mackey_glass(sequence_length=1000, tau=17, random_state=None):    
+def mackey_glass(sequence_length=1000, tau=17, random_state=None):
     random_state = check_random_state(random_state)
     beta = 0.2;
     gamma = 0.1;
@@ -62,15 +62,15 @@ def mackey_glass(sequence_length=1000, tau=17, random_state=None):
     h = 1;
     memory_length = int(tau/h)
 
-    input_data = np.zeros((sequence_length, 1))
-    input_data[0:memory_length] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(memory_length, 1))
+    input_data = np.zeros((sequence_length, 101))
+    input_data[:memory_length, :] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(memory_length, 101))
     for iSequence in range(memory_length, sequence_length):
-        input_data[iSequence] = (1 - h * gamma) * input_data[iSequence - 1] + \
-        beta * h * input_data[iSequence - memory_length] / \
-        (1 + input_data[iSequence - memory_length] ** n);
+        input_data[iSequence, :] = (1 - h * gamma) * input_data[iSequence - 1, :] + \
+        beta * h * input_data[iSequence - memory_length, :] / \
+        (1 + input_data[iSequence - memory_length, :] ** n);
 
     input_data = np.tanh(input_data - 1)
-    y = np.ravel(np.roll(input_data, -1))
+    y = np.roll(input_data, -1, axis=0)
     return input_data, y
 
 

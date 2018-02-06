@@ -14,60 +14,34 @@ from reservoir import Reservoir
 import data
 
 if __name__ == "__main__":
-    params = np.logspace(4, 5, 10)
-    n_params = len(params)
-    n_repeat = 1
+    input_data, y = data.mackey_glass(sequence_length=100)
+    b = Reservoir(n_res=100000, input_scale=2, train_method='ridge',
+    	weights_type='complex gaussian', random_projection='opu',
+    	activation_fun='binary', activation_param=2,
+    	encoding_method='realbinary', n_input = 1000,
+        forget=50)
+    print(b)
 
-    init_times = np.empty((n_repeat, n_params))
-    iterate_times = np.empty((n_repeat, n_params))
-    train_times = np.empty((n_repeat, n_params))
-    results = np.empty((n_repeat, n_params))
+    start = time.time()
+    b.fit(input_data, y)
+    train_score = b.fit_score
 
-    i_param = 0
-    for param in params:
-        for i_repeat in range(n_repeat):
-            try:
-                input_data, y = data.mackey_glass(sequence_length=2000)
-                b = Reservoir(n_res=int(param), input_scale=2, train_method='ridge',
-                	weights_type='complex gaussian', random_projection='simulation',
-                	activation_fun='binary', activation_param=2,
-                	encoding_method='realbinary', n_input = 1000)
-                print(b)
+    input_data, y = data.mackey_glass(sequence_length=100)
+    valid_score = b.score(input_data, np.ravel(y[b.forget:, :]))
+    end = time.time()
+    print('True output')
+    print(np.ravel(y[b.forget:, :]))
+    print('Elapsed time')
+    print(end - start)
+    print('Iterate time')
+    print(b.iterate_timer)
+    print('Fit time')
+    print(b.train_timer)
+    print('Train score')
+    print(train_score)
+    print('Validation score')
+    print(valid_score)
 
-                start = time.time()
-                b.fit(input_data, y)
-                end = time.time()
-                print(end - start)
-
-                input_data, y = data.mackey_glass()
-                current_score = b.score(input_data, y[b.forget:])
-                print(current_score)
-
-                init_times[i_repeat, i_param] = b.init_timer
-                iterate_times[i_repeat, i_param] = b.iterate_timer
-                train_times[i_repeat, i_param] = b.train_timer
-                results[i_repeat, i_param] = current_score
-            except:
-                init_times[i_repeat, i_param] = None
-                iterate_times[i_repeat, i_param] = None
-                train_times[i_repeat, i_param] = None
-                results[i_repeat, i_param] = None
-
-        with open('out/init_times.out', 'w') as f:
-            print(init_times, file=f)
-        with open('out/iterate_times.out', 'w') as f:
-            print(iterate_times, file=f)
-        with open('out/train_times.out', 'w') as f:
-            print(train_times, file=f)
-        with open('out/results.out', 'w') as f:
-            print(results, file=f)
-        with open('out/params.out', 'w') as f:
-            print(params, file=f)
-
-        i_param += 1
-
-    print(init_times)
-    print(iterate_times)
-    print(train_times)
-    print(results)
-    print(params)
+    np.savetxt('out/true.txt', np.ravel(y[b.forget:, :]), fmt='%f')
+    # with open('out/true.out', 'w') as f:
+        # print(np.ravel(y[b.forget:, :]), file=f)
