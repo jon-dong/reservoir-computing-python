@@ -62,8 +62,8 @@ def mackey_glass(sequence_length=1000, tau=17, random_state=None):
     h = 1;
     memory_length = int(tau/h)
 
-    input_data = np.zeros((sequence_length, 101))
-    input_data[:memory_length, :] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(memory_length, 101))
+    input_data = np.zeros((sequence_length, 3000))
+    input_data[:memory_length, :] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(memory_length, 3000))
     for iSequence in range(memory_length, sequence_length):
         input_data[iSequence, :] = (1 - h * gamma) * input_data[iSequence - 1, :] + \
         beta * h * input_data[iSequence - memory_length, :] / \
