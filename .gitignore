@@ -2,3 +2,8 @@ rcenv
 __pycache__
 *.dat
 *.out
+*.sublime-project
+
+*.sublime-workspace
+
+*.txt

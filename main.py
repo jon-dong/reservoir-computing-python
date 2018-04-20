@@ -13,44 +13,38 @@ import time
 from reservoir import Reservoir
 import data
 
-from lightonml.random_projections.opu import OPURandomMapping
-from lightonopu.opu import OPU
+# from lightonml.random_projections.opu import OPURandomMapping
+# from lightonopu.opu import OPU
 
 if __name__ == "__main__":
-    opu = OPU(500, 200)
-    opu.cam_ROI = ([270, 480], [540, 960])
-    opu_transform = OPURandomMapping(opu, n_components=10000, position='1d_square_macro_pixels', roi_shape=(650, 650),
-        roi_position=(245, 131))  # Careful, n_components = n_res. Refactor
-    
-    with opu:
-        input_data, y = data.mackey_glass(sequence_length=100)
-        b = Reservoir(n_res=10000, input_scale=2, train_method='ridge',
-        	weights_type='complex gaussian', random_projection='opu', opu_transform=opu_transform,
-        	activation_fun='binary', activation_param=2,
-        	encoding_method='realbinary', n_input = 1000,
-            forget=50)
-        print(b)
+    input_data, y = data.mackey_glass(sequence_length=300)
+    b = Reservoir(n_res=10000, input_scale=2, train_method='ridge',
+    	weights_type='complex gaussian', random_projection='simulation',
+    	activation_fun='binary', activation_param=2,
+    	encoding_method='realbinary', n_input = 1000,
+        forget=50)
+    print(b)
 
-        start = time.time()
-        b.fit(input_data, y)
-        train_score = b.fit_score
+    start = time.time()
+    b.fit(input_data, y)
+    train_score = b.fit_score
 
-        input_data, y = data.mackey_glass(sequence_length=100)
-        valid_score = b.score(input_data, np.ravel(y[b.forget:, :]))
-        end = time.time()
-        print('True output')
-        print(np.ravel(y[b.forget:, :]))
-        print('Elapsed time')
-        print(end - start)
-        print('Iterate time')
-        print(b.iterate_timer)
-        print('Fit time')
-        print(b.train_timer)
-        print('Train score')
-        print(train_score)
-        print('Validation score')
-        print(valid_score)
+    input_data, y = data.mackey_glass(sequence_length=200)
+    valid_score = b.score(input_data, np.ravel(y[b.forget:]))
+    end = time.time()
+    print('True output')
+    print(np.ravel(y[b.forget:]))
+    print('Elapsed time')
+    print(end - start)
+    print('Iterate time')
+    print(b.iterate_timer)
+    print('Fit time')
+    print(b.train_timer)
+    print('Train score')
+    print(train_score)
+    print('Validation score')
+    print(valid_score)
 
-        np.savetxt('out/true.txt', np.ravel(y[b.forget:, :]), fmt='%f')
-        # with open('out/true.out', 'w') as f:
-            # print(np.ravel(y[b.forget:, :]), file=f)
+    np.savetxt('out/true.txt', np.ravel(y[b.forget:]), fmt='%f')
+    # with open('out/true.out', 'w') as f:
+        # print(np.ravel(y[b.forget:, :]), file=f)
