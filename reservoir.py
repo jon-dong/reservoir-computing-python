@@ -47,6 +47,7 @@ from sklearn.utils import check_random_state
 from scipy.linalg import lstsq
 import sklearn.linear_model
 import time
+from tqdm import tqdm, tqdm_notebook
 
 # from lightonml.random_projections.opu import OPURandomMapping
 # from lightonopu.opu import OPU
@@ -175,9 +176,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         concat_states = np.empty((sequence_length-self.forget, self.n_res+self.n_input))
         act = self.activation()
 
-        for time_step in range(sequence_length):
-            print('Iteration number:')
-            print(time_step)
+        for time_step in tqdm_notebook(range(sequence_length), ncols=900):
             if self.random_projection == 'opu':
                 # binarize state
                 self.state = self.state > 24
