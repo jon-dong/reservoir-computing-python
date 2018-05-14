@@ -59,7 +59,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  encoding_method=None, encoding_param=None,
                  activation_fun='tanh', activation_param=None, forget=100,
                  train_method='explicit', train_param=None,
-                 random_state=None):
+                 random_state=None, save=0):
         self.n_input = n_input
         self.n_res = n_res
         self.input_scale = input_scale
@@ -75,6 +75,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.train_param = train_param
         self.random_state = random_state
         self.opu_transform = opu_transform
+        self.save = save
 
         self.state = None
         self.input_w = None
@@ -275,7 +276,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.train_timer = end - middle
 
         current_output = self.output(concat_states)
-        np.savetxt('out/predict.txt', current_output, fmt='%f')
+        if self.save:
+            np.savetxt('out/predict.txt', current_output, fmt='%f')
         current_y = np.ravel(y[self.forget:, :])
         self.fit_score = 1 - np.sum((current_output-current_y)**2) / np.sum((current_y-np.mean(current_y))**2)
         return self
