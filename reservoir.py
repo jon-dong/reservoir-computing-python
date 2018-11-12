@@ -150,7 +150,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.encoding_method == 'phase':
             return np.exp(1j * mat * self.encoding_param)
         elif self.encoding_method == 'naivebinary':
-            sequence_length, n_sequence = mat.shape
+            n_sequence, sequence_length = mat.shape
 
             mini = -0.55  # self.encoding_param[0]
             maxi = 0.55  # self.encoding_param[1]
@@ -159,7 +159,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             enc_input_data = np.zeros((n_sequence, sequence_length, self.input_dim))
             for i_input in range(self.input_dim):
                 enc_input_data[:, :, i_input] = mat > mini + i_input * step
-
             return enc_input_data
         elif self.encoding_method is None:
             return mat
@@ -247,7 +246,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Initialization finished. Elapsed time:')
             print(self.encode_timer)
-
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res + input_dim)
         iterate_end = time.time()
         self.iterate_timer = iterate_end - start
