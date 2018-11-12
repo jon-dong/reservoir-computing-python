@@ -15,7 +15,7 @@ Internal methods:
     - output: computes a predicted output given reservoir state and output weights
 
 Parameters:
-    - n_input: dimension of the input
+    - input_dim: dimension of the input
     - n_res: size of the reservoir
     - input_scale: scale of the input weights
     - res_scale: scale of the res_scale (after normalization by 1/np.sqrt(n_res))
@@ -32,7 +32,7 @@ Parameters:
 
 Internal attributes:
     - state: current state of the reservoir, np array (n_res,)
-    - input_w: input weights, np array (n_res, n_input)
+    - input_w: input weights, np array (n_res, input_dim)
     - res_w: reservoir internal weights, np array (n_res, n_res)
     - output_w: output weights, np array (n_res, 1)
 
@@ -54,13 +54,13 @@ from tqdm import tqdm, tqdm_notebook
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
-    def __init__(self, n_input=1, n_res=100, input_scale=1, res_scale=1,
+    def __init__(self, input_dim=1, n_res=100, input_scale=1, res_scale=1,
                  random_projection='simulation', weights_type='gaussian', opu_transform=None,
                  encoding_method=None, encoding_param=None,
                  activation_fun='tanh', activation_param=None, forget=100,
                  train_method='explicit', train_param=None,
                  random_state=None, save=0):
-        self.n_input = n_input
+        self.input_dim = input_dim
         self.n_res = n_res
         self.input_scale = input_scale
         self.res_scale = res_scale
@@ -88,15 +88,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         if self.random_projection == 'simulation':
             if self.weights_type == 'gaussian':
-                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
-                    size=(self.n_res, self.n_input))
+                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
+                    size=(self.n_res, self.input_dim))
                 self.res_w = self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
                     size=(self.n_res, self.n_res))
             elif self.weights_type == 'complex gaussian': 
-                self.input_w = 1j * self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input),
-                    size=(self.n_res, self.n_input))
-                self.input_w += self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
-                    size=(self.n_res, self.n_input))
+                self.input_w = 1j * self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim),
+                    size=(self.n_res, self.input_dim))
+                self.input_w += self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
+                    size=(self.n_res, self.input_dim))
                 self.res_w = 1j * self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
                     size=(self.n_res, self.n_res))
                 self.res_w += self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
@@ -105,33 +105,36 @@ class Reservoir(BaseEstimator, RegressorMixin):
             n_batch = 2
             step = int(self.n_res / n_batch)
             if self.weights_type == 'gaussian':
-                self.input_w = np.memmap('data/input_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.input_w = np.memmap('data/input_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.input_dim))
                 self.res_w = np.memmap('data/res_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
 
                 for i_batch in range(n_batch):
-                    self.input_w[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
-                        size=(step, self.n_input))
+                    self.input_w[i_batch * step : (i_batch+1) * step] = \
+                    self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
+                        size=(step, self.input_dim))
                     for j_batch in range(n_batch):
                         self.res_w[i_batch * step : (i_batch+1) * step, j_batch * step : (j_batch+1) * step] = \
-                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
                             size=(step, step))
             elif self.weights_type == 'complex gaussian':
-                self.input_w_re = np.memmap('data/input_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
-                self.input_w_im = np.memmap('data/input_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_input))
+                self.input_w_re = np.memmap('data/input_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.input_dim))
+                self.input_w_im = np.memmap('data/input_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.input_dim))
                 self.res_w_re = np.memmap('data/res_w_re.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
                 self.res_w_im = np.memmap('data/res_w_im.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
 
                 for i_batch in range(n_batch):
-                    self.input_w_re[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
-                        size=(step, self.n_input))
-                    self.input_w_im[i_batch * step : (i_batch+1) * step] = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
-                        size=(step, self.n_input))
+                    self.input_w_re[i_batch * step : (i_batch+1) * step] = \
+                    self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
+                        size=(step, self.input_dim))
+                    self.input_w_im[i_batch * step : (i_batch+1) * step] = \
+                    self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
+                        size=(step, self.input_dim))
                     for j_batch in range(n_batch):
                         self.res_w_re[i_batch * step : (i_batch+1) * step, j_batch * step : (j_batch+1) * step] = \
-                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
                             size=(step, step))
                         self.res_w_im[i_batch * step : (i_batch+1) * step, j_batch * step : (j_batch+1) * step] = \
-                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.n_input), 
+                        self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
                             size=(step, step))
             
 
@@ -150,11 +153,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
             mini = -0.55  # self.encoding_param[0]
             maxi = 0.55  # self.encoding_param[1]
-            step = (maxi - mini) / self.n_input
+            step = (maxi - mini) / self.input_dim
             
-            enc_input_data = np.zeros((sequence_length, self.n_input, n_sequence))
-            for i_input in range(self.n_input):
-                enc_input_data[:, i_input, :] = mat > mini + i_input * step
+            enc_input_data = np.zeros((n_sequence, sequence_length, self.input_dim))
+            for i_input in range(self.input_dim):
+                enc_input_data[:, :, i_input] = mat > mini + i_input * step
 
             return enc_input_data
         elif self.encoding_method is None:
@@ -171,63 +174,33 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def iterate(self, input_data):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
-        sequence_length, n_input, n_sequence = input_data.shape
+        n_sequence, sequence_length, input_dim = input_data.shape
 
-        concat_states = np.empty((sequence_length-self.forget, n_sequence, self.n_res+self.n_input))
+        concat_states = np.empty((n_sequence, sequence_length-self.forget, self.n_res+self.input_dim))
         act = self.activation()
 
         for i_sequence in range(n_sequence):
             self.reset()
             for time_step in tqdm_notebook(range(sequence_length), ncols=900):
-                if self.random_projection == 'opu':
-                    # binarize state
-                    self.state = self.state > 24
-                    print('Active proportion:')
-                    print(np.mean(self.state))
-
-                    # change input and state format
-                    self.state = self.state.astype(np.uint8)
-                    current_input = input_data[time_step, :, :]
-                    current_input = current_input.astype(np.uint8).T
-
-                    # concatenate input and state
-                    # total_size = int(np.maximum(5 * self.n_res, 5 / 4 * self.n_input))
-                    total_size = int(3 * self.n_res)
-                    dmd_vec = np.empty((800, total_size))
-                    dmd_vec[:, :self.n_res] = self.state
-                    n_repeat = int(self.n_res * 2 / self.n_input)
-                    dmd_vec[:, self.n_res:self.n_res+n_repeat*self.n_input] = np.repeat(current_input, n_repeat, axis=1)
-
-                    # replicate matrix to send a batch
-                    # dmd_vec = np.repeat(dmd_vec, 800, axis=0)
-
-                    # use opu_transform
-                    self.opu_transform.fit(dmd_vec)
-                    Y = self.opu_transform.transform(dmd_vec, n_samples_by_pass=800)
-                    self.state = Y#[0, :]
-
-                    # self.state = self.state > 40
-                    # self.state = self.state.astype(float32)
-
-                elif self.random_projection == 'simulation':
-                    self.state = act(np.dot(self.input_w, input_data[time_step, :, i_sequence]) +
+                if self.random_projection == 'simulation':
+                    self.state = act(np.dot(self.input_w, input_data[i_sequence, time_step, :]) +
                                      np.dot(self.res_w, self.state))
                 elif self.random_projection == 'out of core':
                     if self.weights_type == 'gaussian':
-                        self.state = act(np.dot(self.input_w, input_data[time_step, :]) + 
+                        self.state = act(np.dot(self.input_w, input_data[i_sequence, time_step, :]) + 
                             np.dot(self.res_w, self.state))
                     elif self.weights_type == 'complex gaussian':
-                        self.state = act(np.dot(self.input_w_re, input_data[time_step, :]) + 
-                            1j * np.dot(self.input_w_im, input_data[time_step, :]) +
+                        self.state = act(np.dot(self.input_w_re, input_data[i_sequence, time_step, :]) + 
+                            1j * np.dot(self.input_w_im, input_data[i_sequence, time_step, :]) +
                             np.dot(self.res_w_re, self.state) +
                             1j * np.dot(self.res_w_im, self.state))
                 if time_step >= self.forget:
-                    concat_states[time_step-self.forget, i_sequence, :] = np.concatenate((self.state, input_data[time_step, :, i_sequence].T))
+                    concat_states[i_sequence, time_step-self.forget, :] = np.concatenate((self.state, input_data[i_sequence, time_step, :].T))
         return concat_states
 
     def train(self, concat_states, y):
         """ Performs a linear regression """
-        sequence_length, n_sequence, total_size = concat_states.shape
+        n_sequence, sequence_length, total_size = concat_states.shape
         concat_states = np.reshape(concat_states, (n_sequence * sequence_length, total_size))
         y = np.ravel(y)
 
@@ -254,12 +227,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def output(self, concat_states):
         """ Computes the output given reservoir states and output weights """
-        sequence_length, n_sequence, total_size = concat_states.shape
+        n_sequence, sequence_length, total_size = concat_states.shape
         concat_states = np.reshape(concat_states, (n_sequence * sequence_length, total_size))
         
         total_output = np.dot(concat_states, self.output_w)
         return total_output
-        # return np.reshape(total_output, (sequence_length, n_sequence))
+        # return np.reshape(total_output, (n_sequence, sequence_length))
 
     def fit(self, input_data, y=None):
         """ Iterates the reservoir with training input, fits the output weights """
@@ -267,9 +240,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.initialize()
         enc_input_data = self.encode(input_data)
         start = time.time()
-        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
+        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res + input_dim)
         middle = time.time()
-        self.output_w = self.train(concat_states, y[self.forget:, :])
+        self.output_w = self.train(concat_states, y[:, self.forget:])
         end = time.time()
         self.init_timer = start - start0
         self.iterate_timer = middle - start
@@ -278,7 +251,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         current_output = self.output(concat_states)
         if self.save:
             np.savetxt('out/predict.txt', current_output, fmt='%f')
-        current_y = np.ravel(y[self.forget:, :])
+        current_y = np.ravel(y[:, self.forget:])
         self.fit_score = 1 - np.sum((current_output-current_y)**2) / np.sum((current_y-np.mean(current_y))**2)
         return self
 
@@ -292,6 +265,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def score(self, input_data, true_output):
         pred_output = self.predict(input_data)
-        true_output = np.ravel(true_output[self.forget:, :])
+        true_output = np.ravel(true_output[:, self.forget:])
         score = 1 - np.sum((pred_output-true_output)**2) / np.sum((true_output-np.mean(true_output))**2)
         return score
