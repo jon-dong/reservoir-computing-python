@@ -59,7 +59,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  encoding_method=None, encoding_param=None,
                  activation_fun='tanh', activation_param=None, forget=100,
                  train_method='explicit', train_param=None,
-                 random_state=None, save=0):
+                 random_state=None, save=0, verbose=1):
         self.input_dim = input_dim
         self.n_res = n_res
         self.input_scale = input_scale
@@ -76,6 +76,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.random_state = random_state
         self.opu_transform = opu_transform
         self.save = save
+        self.verbose = verbose
 
         self.state = None
         self.input_w = None
@@ -204,11 +205,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         concat_states = np.reshape(concat_states, (n_sequence * sequence_length, total_size))
         y = np.ravel(y)
 
-        with open('out/concat_states.out', 'w') as f:
-            print(concat_states, file=f)
-        with open('out/train_y.out', 'w') as f:
-            print(y, file=f)
-
         if self.train_method == 'explicit':
             output_w, res, rnk, s = lstsq(concat_states, y)
         elif self.train_method == 'explicitsklearn':
@@ -223,6 +219,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=50000, tol=1e-5, alpha=self.train_param)
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
+
         return output_w
 
     def output(self, concat_states):
@@ -234,37 +231,81 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return total_output
         # return np.reshape(total_output, (n_sequence, sequence_length))
 
+    def score_metric(self, pred_output, output):
+        return 1 - np.sum((pred_output-output)**2) / np.sum((output-np.mean(output))**2)
+
     def fit(self, input_data, y=None):
         """ Iterates the reservoir with training input, fits the output weights """
-        start0 = time.time()
+        
+        start = time.time()
+        if self.verbose:
+            print('Start of training...')
         self.initialize()
         enc_input_data = self.encode(input_data)
-        start = time.time()
-        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res + input_dim)
-        middle = time.time()
-        self.output_w = self.train(concat_states, y[:, self.forget:])
-        end = time.time()
-        self.init_timer = start - start0
-        self.iterate_timer = middle - start
-        self.train_timer = end - middle
+        encode_end = time.time()
+        self.encode_timer = encode_end - start
+        if self.verbose:
+            print('Initialization finished. Elapsed time:')
+            print(self.encode_timer)
 
-        current_output = self.output(concat_states)
+        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res + input_dim)
+        iterate_end = time.time()
+        self.iterate_timer = iterate_end - start
+        if self.verbose:
+            print('Iterations finished. Elapsed time:')
+            print(self.iterate_timer)
+        
+        self.output_w = self.train(concat_states, y[:, self.forget:])
+        train_end = time.time()
+        self.train_timer = train_end - start
+        pred_output = self.output(concat_states)
+
+        if self.verbose:
+            print('Training finished. Elapsed time:')
+            print(self.train_timer)
         if self.save:
-            np.savetxt('out/predict.txt', current_output, fmt='%f')
-        current_y = np.ravel(y[:, self.forget:])
-        self.fit_score = 1 - np.sum((current_output-current_y)**2) / np.sum((current_y-np.mean(current_y))**2)
+            with open('out/concat_states.out', 'w') as f:
+                print(concat_states, file=f)
+            with open('out/train_y.out', 'w') as f:
+                print(y, file=f)
+            with open('out/weights.out', 'w') as f:
+                print(output_w, file=f)
+            with open('out/train_predict.out', 'w') as f:
+                print(pred_output, file=f)
+            if self.verbose:
+                print('Results saved in memory.')
+
+        true_output = np.ravel(y[:, self.forget:])
+        self.fit_score = self.score_metric(pred_output, true_output)
         return self
 
     def predict(self, input_data):  # , y=None):
         """ Iterates the reservoir with input, predicts using the fit output weights """
+        start = time.time()
+        if self.verbose:
+            print('Start of testing...')
         self.reset()
         enc_input_data = self.encode(input_data)
+        self.encode_timer = encode_end - start
+        if self.verbose:
+            print('Initialization finished. Elapsed time:')
+            print(self.encode_timer)
+
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
+        iterate_end = time.time()
+        self.iterate_timer = iterate_end - start
+        if self.verbose:
+            print('Iterations finished. Elapsed time:')
+            print(self.iterate_timer)
+
         res = self.output(concat_states)
+        if self.verbose:
+            print('Testing finished. Elapsed time:')
+            print(self.train_timer)
         return res
 
     def score(self, input_data, true_output):
         pred_output = self.predict(input_data)
         true_output = np.ravel(true_output[:, self.forget:])
-        score = 1 - np.sum((pred_output-true_output)**2) / np.sum((true_output-np.mean(true_output))**2)
+        score = self.score_metric(pred_output, true_output)
         return score
