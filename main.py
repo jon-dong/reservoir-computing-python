@@ -29,7 +29,7 @@ if __name__ == "__main__":
     for param in params:
         for i_repeat in range(n_repeat):
             input_data, y = data.mackey_glass(sequence_length=2000)
-            b = Reservoir(n_res=1000, input_scale=2, train_method='ridge',
+            b = Reservoir(n_res=1000, input_scale=2, train_method='ridge', train_param=1, 
                           weights_type='complex gaussian', random_projection='simulation',
                           activation_fun='binary', activation_param=1,
                           encoding_method='naivebinary', input_dim=1000, forget=100)
