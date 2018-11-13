@@ -83,12 +83,12 @@ def mackey_glass(sequence_length=1000, n_sequence=1, tau=17, random_state=None):
 
     input_data = np.zeros((n_sequence, sequence_length, 1))  # last dimension is input_dim = 1
     # Initialization of Mackey Glass
-    input_data[:, :memory_length] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(n_sequence, memory_length))
+    input_data[:, :memory_length] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(n_sequence, memory_length, 1))
     # Computation of next terms by finite differences
     for iSequence in range(memory_length, sequence_length):
-        input_data[:, iSequence] = (1 - h * gamma) * input_data[:, iSequence - 1] + \
-        beta * h * input_data[:, iSequence - memory_length] / \
-        (1 + input_data[:, iSequence - memory_length] ** n)
+        input_data[:, iSequence, 0] = (1 - h * gamma) * input_data[:, iSequence - 1, 0] + \
+        beta * h * input_data[:, iSequence - memory_length, 0] / \
+        (1 + input_data[:, iSequence - memory_length, 0] ** n)
 
     # Preprocessing (done by other people, seems to help)
     input_data = np.tanh(input_data - 1)

@@ -48,6 +48,7 @@ from scipy.linalg import lstsq
 import sklearn.linear_model
 import time
 from tqdm import tqdm, tqdm_notebook
+import sys
 
 # from lightonml.random_projections.opu import OPURandomMapping
 # from lightonopu.opu import OPU
@@ -150,7 +151,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.encoding_method == 'phase':
             return np.exp(1j * mat * self.encoding_param)
         elif self.encoding_method == 'naivebinary':
-            sequence_length, n_sequence = mat.shape
+            n_sequence, sequence_length, input_dim = mat.shape
+            # we reshape it to avoid problems with 3D matrices
+            # for now, we only work with 1D time series
+            mat = np.reshape(mat, (n_sequence, sequence_length))
 
             mini = -0.55  # self.encoding_param[0]
             maxi = 0.55  # self.encoding_param[1]
@@ -159,7 +163,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             enc_input_data = np.zeros((n_sequence, sequence_length, self.input_dim))
             for i_input in range(self.input_dim):
                 enc_input_data[:, :, i_input] = mat > mini + i_input * step
-
             return enc_input_data
         elif self.encoding_method is None:
             return mat
@@ -182,7 +185,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         for i_sequence in range(n_sequence):
             self.reset()
-            for time_step in tqdm_notebook(range(sequence_length), ncols=900):
+            for time_step in tqdm(range(sequence_length), file=sys.stdout):
                 if self.random_projection == 'simulation':
                     self.state = act(np.dot(self.input_w, input_data[i_sequence, time_step, :]) +
                                      np.dot(self.res_w, self.state))
@@ -247,7 +250,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Initialization finished. Elapsed time:')
             print(self.encode_timer)
-
+            # time.sleep(.5)
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res + input_dim)
         iterate_end = time.time()
         self.iterate_timer = iterate_end - start
@@ -260,9 +263,14 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.train_timer = train_end - start
         pred_output = self.output(concat_states)
 
+        true_output = np.ravel(y[:, self.forget:])
+        self.fit_score = self.score_metric(pred_output, true_output)
+
         if self.verbose:
             print('Training finished. Elapsed time:')
             print(self.train_timer)
+            print('Training score:')
+            print(self.fit_score)
         if self.save:
             with open('out/concat_states.out', 'w') as f:
                 print(concat_states, file=f)
@@ -275,8 +283,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.verbose:
                 print('Results saved in memory.')
 
-        true_output = np.ravel(y[:, self.forget:])
-        self.fit_score = self.score_metric(pred_output, true_output)
         return self
 
     def predict(self, input_data):  # , y=None):
@@ -286,26 +292,34 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Start of testing...')
         self.reset()
         enc_input_data = self.encode(input_data)
-        self.encode_timer = encode_end - start
+        encode_end = time.time()
+        encode_timer = encode_end - start
         if self.verbose:
             print('Initialization finished. Elapsed time:')
-            print(self.encode_timer)
+            print(encode_timer)
 
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
         iterate_end = time.time()
-        self.iterate_timer = iterate_end - start
+        iterate_timer = iterate_end - start
         if self.verbose:
             print('Iterations finished. Elapsed time:')
-            print(self.iterate_timer)
+            print(iterate_timer)
 
         res = self.output(concat_states)
+        test_end = time.time()
+        test_timer = test_end - start
         if self.verbose:
             print('Testing finished. Elapsed time:')
-            print(self.train_timer)
+            print(test_timer)
         return res
 
     def score(self, input_data, true_output):
         pred_output = self.predict(input_data)
-        true_output = np.ravel(true_output[:, self.forget:])
+        true_output = np.ravel(true_output)
         score = self.score_metric(pred_output, true_output)
+        if self.verbose:
+            print('Testing finished. Elapsed time:')
+            print(self.train_timer)
+            print('Testing score:')
+            print(score)
         return score
