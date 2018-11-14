@@ -180,7 +180,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
         n_sequence, sequence_length, input_dim = input_data.shape
 
-        concat_states = np.empty((n_sequence, sequence_length-self.forget, self.n_res+self.input_dim))
+        concat_states = np.empty((n_sequence, sequence_length-self.forget, self.n_res+self.input_dim), dtype='cfloat')
         act = self.activation()
 
         for i_sequence in range(n_sequence):
@@ -235,7 +235,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # return np.reshape(total_output, (n_sequence, sequence_length))
 
     def score_metric(self, pred_output, output):
-        return 1 - np.sum((pred_output-output)**2) / np.sum((output-np.mean(output))**2)
+        return 1 - np.sum(abs(pred_output-output)**2) / np.sum(abs(output-np.mean(output))**2)
 
     def fit(self, input_data, y=None):
         """ Iterates the reservoir with training input, fits the output weights """
@@ -322,4 +322,4 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print(self.train_timer)
             print('Testing score:')
             print(score)
-        return score
+        return pred_output, score
