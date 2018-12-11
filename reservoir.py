@@ -215,6 +215,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
         elif self.train_method == 'ridge':
+            concat_states = np.real_if_close(concat_states, tol=1e5)
             clf = sklearn.linear_model.Ridge(fit_intercept=False, alpha=self.train_param)
             clf.fit(concat_states, y)
             output_w = clf.coef_.T
