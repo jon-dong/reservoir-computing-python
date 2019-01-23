@@ -66,7 +66,7 @@ def narma(sequence_length=1000, n_sequence=1, random_state=None):
     return np.tanh(input_data), np.tanh(y)
 
 
-def mackey_glass(sequence_length=1000, n_sequence=1, tau=17, random_state=None):
+def mackey_glass(sequence_length=1000, n_sequence=1, data_dim=1, random_state=None):
     '''
     Generates Mackey-Glass time series, using discretization of the 
     MG differential equation
@@ -81,7 +81,7 @@ def mackey_glass(sequence_length=1000, n_sequence=1, tau=17, random_state=None):
     h = 1  # time step
     memory_length = int(tau/h)
 
-    input_data = np.zeros((n_sequence, sequence_length, 1))  # last dimension is input_dim = 1
+    input_data = np.zeros((n_sequence, sequence_length, data_dim))  # last dimension is input_dim = 1
     # Initialization of Mackey Glass
     input_data[:, :memory_length] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(n_sequence, memory_length, 1))
     # Computation of next terms by finite differences
@@ -92,10 +92,8 @@ def mackey_glass(sequence_length=1000, n_sequence=1, tau=17, random_state=None):
 
     # Preprocessing (done by other people, seems to help)
     input_data = np.tanh(input_data - 1)
-    # We want to predict one step ahead, output is obtained by shifting the input
-    y = np.roll(input_data, -1, axis=1)
-    return input_data, y
 
+    return input_data
 
 def mso(sequence_length=1000, n_sequence=1, random_state=None):
     '''
@@ -113,3 +111,35 @@ def mso(sequence_length=1000, n_sequence=1, random_state=None):
     y = np.roll(input_data, -1, axis=1)
     return input_data, y
 
+def kuramoto_sivashinsky(sequence_length=1000, n_sequence=1,  spatial_points=100):
+    '''
+    solution of the generalized Kuramoto–Sivashinsky equation, u_t + u*u_x + α*u_xx + γ*u_xxxx = 0,
+    computed by tanh-function method.
+    '''
+    # Octave functions are download from https://github.com/qyxiao/machine-learning-2016-spring/blob/master
+    from oct2py import octave
+    N = spatial_points
+    h = 0.25
+    nstp = sequence_length
+    a0 = np.zeros([N - 2, 1])
+    L = 22.
+    input_data = np.zeros((n_sequence, sequence_length+1, spatial_points+1))
+    for idx in range(n_sequence):
+        a0[0:4] = np.random.rand()  # just some initial condition
+        [tt, fdata] = octave.feval('ksfmstp', a0, L, h, nstp, 1, nout=2)
+        [xx, input_data[idx,:,:]] = octave.feval('ksfm2real', fdata, L, nout=2)
+
+    # tanh function seems to help to the prediction accuracy
+    return np.tanh(input_data), xx, tt
+
+def roll_and_concat(input_data, roll_num=1):
+    '''
+    :param input_data: the original data that will be rolled by axis1
+    :param roll_num: how many times will be the original data rolled and concatenated with itself
+    '''
+    n_sequence, sequence_length, data_dim = input_data.shape
+    rolled_data = input_data
+    for i in range(roll_num - 1):
+        rolled_data = np.concatenate((rolled_data, np.roll(input_data, -(1 + i), axis=1)), axis=2)
+
+    return rolled_data

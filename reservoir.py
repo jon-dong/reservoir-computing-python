@@ -47,7 +47,7 @@ from sklearn.utils import check_random_state
 from scipy.linalg import lstsq
 import sklearn.linear_model
 import time
-from tqdm import tqdm, tqdm_notebook
+from tqdm import tqdm
 import sys
 
 # from lightonml.random_projections.opu import OPURandomMapping
@@ -90,7 +90,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         if self.random_projection == 'simulation':
             if self.weights_type == 'gaussian':
-                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim), 
+                self.input_w = self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.input_dim),
                     size=(self.n_res, self.input_dim))
                 self.res_w = self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
                     size=(self.n_res, self.n_res))
@@ -142,7 +142,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def reset(self):
         """ Resets the reservoir state, for new runs """
-        self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res,))
+        self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res))
 
     def encode(self, mat):
         """ Encodes the input before being fed in the reservoir """
@@ -151,18 +151,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.encoding_method == 'phase':
             return np.exp(1j * mat * self.encoding_param)
         elif self.encoding_method == 'naivebinary':
-            n_sequence, sequence_length, input_dim = mat.shape
-            # we reshape it to avoid problems with 3D matrices
-            # for now, we only work with 1D time series
-            mat = np.reshape(mat, (n_sequence, sequence_length))
+            n_sequence, sequence_length, data_dim = mat.shape
 
-            mini = -0.55  # self.encoding_param[0]
-            maxi = 0.55  # self.encoding_param[1]
-            step = (maxi - mini) / self.input_dim
+            mini = -self.encoding_param
+            maxi = self.encoding_param
+            step = (maxi - mini) / np.ceil(self.input_dim / data_dim)
             
             enc_input_data = np.zeros((n_sequence, sequence_length, self.input_dim))
             for i_input in range(self.input_dim):
-                enc_input_data[:, :, i_input] = mat > mini + i_input * step
+                i_data = np.mod(i_input, data_dim)
+                enc_input_data[:, :, i_input] = mat[:, :, i_data] > mini + np.ceil(i_input / data_dim) * step
             return enc_input_data
         elif self.encoding_method is None:
             return mat
@@ -180,7 +178,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
         n_sequence, sequence_length, input_dim = input_data.shape
 
-        concat_states = np.empty((n_sequence, sequence_length-self.forget, self.n_res+self.input_dim), dtype='cfloat')
+        concat_states = np.empty((n_sequence, sequence_length-self.forget, self.n_res+input_dim), dtype='cfloat')
         act = self.activation()
 
         for i_sequence in range(n_sequence):
@@ -200,13 +198,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             1j * np.dot(self.res_w_im, self.state))
                 if time_step >= self.forget:
                     concat_states[i_sequence, time_step-self.forget, :] = np.concatenate((self.state, input_data[i_sequence, time_step, :].T))
+        print(concat_states.shape)
         return concat_states
 
     def train(self, concat_states, y):
         """ Performs a linear regression """
-        n_sequence, sequence_length, total_size = concat_states.shape
-        concat_states = np.reshape(concat_states, (n_sequence * sequence_length, total_size))
-        y = np.ravel(y)
+        concat_states = concat_states.reshape(-1, concat_states.shape[-1])
+        if y.shape[-1] == 1:
+            y = np.ravel(y)
+        else:
+            y = y.reshape(-1, y.shape[-1])
 
         if self.train_method == 'explicit':
             output_w, res, rnk, s = lstsq(concat_states, y)
@@ -228,9 +229,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def output(self, concat_states):
         """ Computes the output given reservoir states and output weights """
-        n_sequence, sequence_length, total_size = concat_states.shape
-        concat_states = np.reshape(concat_states, (n_sequence * sequence_length, total_size))
-        
+        concat_states = concat_states.reshape(-1, concat_states.shape[-1])
         total_output = np.dot(concat_states, self.output_w)
         return total_output
         # return np.reshape(total_output, (n_sequence, sequence_length))
@@ -239,8 +238,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return 1 - np.sum(abs(pred_output-output)**2) / np.sum(abs(output-np.mean(output))**2)
 
     def fit(self, input_data, y=None):
-        """ Iterates the reservoir with training input, fits the output weights """
-        
+        """
+        Iterates the reservoir with training input and fits the output weights based on the first n time steps of
+        input_data in order to predict next time steps with length of pred_length, for each n.
+        """
+
         start = time.time()
         if self.verbose:
             print('Start of training...')
@@ -251,20 +253,24 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Initialization finished. Elapsed time:')
             print(self.encode_timer)
-            # time.sleep(.5)
-        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res + input_dim)
+
+        concat_states = self.iterate(enc_input_data) # concat_states.shape is (sequence_length, n_res + self.input_dim)
         iterate_end = time.time()
         self.iterate_timer = iterate_end - start
         if self.verbose:
             print('Iterations finished. Elapsed time:')
             print(self.iterate_timer)
-        
-        self.output_w = self.train(concat_states, y[:, self.forget:])
+
+        y_ = y[:, self.forget:, :]
+        self.output_w = self.train(concat_states, y_)
         train_end = time.time()
         self.train_timer = train_end - start
-        pred_output = self.output(concat_states)
 
-        true_output = np.ravel(y[:, self.forget:])
+        pred_output = self.output(concat_states)
+        if y_.shape[-1] == 1:
+            true_output = np.ravel(y_)
+        else:
+            true_output = y_.reshape(-1, y_.shape[-1])
         self.fit_score = self.score_metric(pred_output, true_output)
 
         if self.verbose:
@@ -278,7 +284,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             with open('out/train_y.out', 'w') as f:
                 print(y, file=f)
             with open('out/weights.out', 'w') as f:
-                print(output_w, file=f)
+                print(self.output_w, file=f)
             with open('out/train_predict.out', 'w') as f:
                 print(pred_output, file=f)
             if self.verbose:
@@ -315,8 +321,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return res
 
     def score(self, input_data, true_output):
-        pred_output = self.predict(input_data)
-        true_output = np.ravel(true_output)
+        pred_output = np.real_if_close(self.predict(input_data), tol=1e5)
+        true_output = true_output.reshape(-1, true_output.shape[-1])
         score = self.score_metric(pred_output, true_output)
         if self.verbose:
             print('Testing finished. Elapsed time:')
