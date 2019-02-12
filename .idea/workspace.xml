@@ -2,9 +2,12 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="c6839d42-1734-4537-9c42-68634a0564fc" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/SLM_input_data.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/SLM_predicted_data.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/SLM_timesteps_20000.npy" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/SLM_true_data.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/SLM_true_predicted_difference.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/octave-workspace" beforeDir="false" afterPath="$PROJECT_DIR$/octave-workspace" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/reservoir.py" beforeDir="false" afterPath="$PROJECT_DIR$/reservoir.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -29,8 +32,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/reservoir.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="184">
-              <caret line="188" column="49" lean-forward="true" selection-start-line="188" selection-start-column="49" selection-end-line="188" selection-end-column="49" />
+            <state relative-caret-position="244">
+              <caret line="192" lean-forward="true" selection-start-line="192" selection-end-line="192" />
               <folding>
                 <element signature="e#1783#1801#0" expanded="true" />
               </folding>
@@ -90,7 +93,7 @@
       </list>
     </option>
   </component>
-  <component name="ProjectFrameBounds" extendedState="6">
+  <component name="ProjectFrameBounds" extendedState="7">
     <option name="x" value="453" />
     <option name="y" value="49" />
     <option name="width" value="1394" />
@@ -176,7 +179,7 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="64" y="-11" width="1857" height="1092" extended-state="6" />
+    <frame x="64" y="-11" width="1857" height="1092" extended-state="7" />
     <editor active="true" />
     <layout>
       <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.046943232" />
@@ -246,8 +249,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/reservoir.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="184">
-          <caret line="188" column="49" lean-forward="true" selection-start-line="188" selection-start-column="49" selection-end-line="188" selection-end-column="49" />
+        <state relative-caret-position="244">
+          <caret line="192" lean-forward="true" selection-start-line="192" selection-end-line="192" />
           <folding>
             <element signature="e#1783#1801#0" expanded="true" />
           </folding>
