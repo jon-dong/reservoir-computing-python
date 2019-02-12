@@ -149,12 +149,24 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.encoding_method == 'threshold':
             return mat > self.encoding_param
         elif self.encoding_method == 'phase':
-            return np.exp(1j * mat * self.encoding_param)
+            mat = np.array(mat/np.amax(np.abs(mat))*255, dtype='int')/255
+            # n_sequence, sequence_length, data_dim = mat.shape
+            # slm_enc_depth = 256
+            # n = np.ceil(self.input_dim / data_dim)
+            # enc_depth = n*slm_enc_depth - 1
+            # mat = np.array(mat/np.amax(abs(mat))*enc_depth, dtype='int')/enc_depth*np.amax(abs(mat))
+            # enc_input_data = np.zeros((n_sequence, sequence_length, self.input_dim))
+            # for i in range(n):
+            #     sub_sequence = mat[:,i::n,:]
+            #     sub_sequence_length = sub_sequence.shape[1]
+            #     for j in range(n):
+            #         enc_input_data[:, i*sub_sequence_length+j::n, :] = sub_sequence
+            return np.exp(1j * mat * np.pi)
         elif self.encoding_method == 'naivebinary':
             n_sequence, sequence_length, data_dim = mat.shape
 
-            mini = -self.encoding_param
-            maxi = self.encoding_param
+            mini = np.min(mat) # -self.encoding_param
+            maxi = np.max(mat) # self.encoding_param
             step = (maxi - mini) / np.ceil(self.input_dim / data_dim)
             
             enc_input_data = np.zeros((n_sequence, sequence_length, self.input_dim))
@@ -170,15 +182,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.activation_fun == 'tanh':
             return lambda x: np.tanh(x)
         elif self.activation_fun == 'phase':
-            return lambda x: np.exp(1j * abs(x) * self.activation_param)
+            return lambda x: np.exp(1j * np.abs(x) / np.amax(np.abs(x)) * 2 * np.pi)
         elif self.activation_fun == 'binary':
-            return lambda x: abs(x) > self.activation_param
+            return lambda x: np.abs(x) > np.median(np.abs(x))/2 # to activate the half of the neurons
 
     def iterate(self, input_data):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
         n_sequence, sequence_length, input_dim = input_data.shape
 
-        concat_states = np.empty((n_sequence, sequence_length-self.forget, self.n_res+input_dim), dtype='cfloat')
+        n = 2 if np.iscomplex(input_data).any() else 1
+        concat_states = np.empty((n_sequence, sequence_length-self.forget, n * (self.n_res+input_dim)), dtype='cfloat')
         act = self.activation()
 
         for i_sequence in range(n_sequence):
@@ -189,7 +202,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                      np.dot(self.res_w, self.state))
                 elif self.random_projection == 'out of core':
                     if self.weights_type == 'gaussian':
-                        self.state = act(np.dot(self.input_w, input_data[i_sequence, time_step, :]) + 
+                        self.state = act(np.dot(self.input_w, input_data[i_sequence, time_step, :]) +
                             np.dot(self.res_w, self.state))
                     elif self.weights_type == 'complex gaussian':
                         self.state = act(np.dot(self.input_w_re, input_data[i_sequence, time_step, :]) + 
@@ -197,8 +210,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             np.dot(self.res_w_re, self.state) +
                             1j * np.dot(self.res_w_im, self.state))
                 if time_step >= self.forget:
-                    concat_states[i_sequence, time_step-self.forget, :] = np.concatenate((self.state, input_data[i_sequence, time_step, :].T))
-        print(concat_states.shape)
+                    if np.iscomplex(input_data).any():
+                        concat_states[i_sequence, time_step - self.forget, :] = np.concatenate(
+                            (np.real(self.state), np.imag(self.state), np.real(input_data[i_sequence, time_step, :]).T,
+                             np.imag(input_data[i_sequence, time_step, :]).T))
+                    else:
+                        concat_states[i_sequence, time_step-self.forget, :] = np.concatenate((self.state, input_data[i_sequence, time_step, :].T))
         return concat_states
 
     def train(self, concat_states, y):
@@ -235,7 +252,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # return np.reshape(total_output, (n_sequence, sequence_length))
 
     def score_metric(self, pred_output, output):
-        return 1 - np.sum(abs(pred_output-output)**2) / np.sum(abs(output-np.mean(output))**2)
+        return 1 - np.sum(np.abs(pred_output-output)**2) / np.sum(np.abs(output-np.mean(output))**2)
 
     def fit(self, input_data, y=None):
         """
