@@ -183,8 +183,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return lambda x: np.tanh(x)
         elif self.activation_fun == 'phase':
             return lambda x: np.exp(1j * np.abs(x) / np.amax(np.abs(x)) * 2 * np.pi)
+        elif self.activation_fun == 'phase_8bit':
+            def fun(x):
+                x = np.array(np.abs(x) / np.amax(np.abs(x)) * 255, dtype='int') / 255
+                return np.exp(1j * x * 2 * np.pi)
+            return fun
         elif self.activation_fun == 'binary':
-            return lambda x: np.abs(x) > np.median(np.abs(x))/2 # to activate the half of the neurons
+            return lambda x: np.abs(x) > np.median(np.abs(x)) # to activate the half of the neurons
 
     def iterate(self, input_data):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
