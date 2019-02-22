@@ -2,12 +2,10 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="c6839d42-1734-4537-9c42-68634a0564fc" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/SLM_input_data.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/SLM_predicted_data.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/SLM_timesteps_20000.npy" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/SLM_true_data.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/SLM_true_predicted_difference.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data.py" beforeDir="false" afterPath="$PROJECT_DIR$/data.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/octave-workspace" beforeDir="false" afterPath="$PROJECT_DIR$/octave-workspace" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -17,11 +15,11 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="false">
+      <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/data.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="165">
-              <caret line="119" column="15" selection-start-line="119" selection-start-column="9" selection-end-line="119" selection-end-column="15" />
+            <state relative-caret-position="200">
+              <caret line="121" column="12" lean-forward="true" selection-start-line="121" selection-start-column="12" selection-end-line="121" selection-end-column="12" />
               <folding>
                 <element signature="e#597#615#0" expanded="true" />
               </folding>
@@ -29,11 +27,11 @@
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/reservoir.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="244">
-              <caret line="192" lean-forward="true" selection-start-line="192" selection-end-line="192" />
+            <state relative-caret-position="329">
+              <caret line="206" column="36" selection-start-line="206" selection-start-column="36" selection-end-line="206" selection-end-column="36" />
               <folding>
                 <element signature="e#1783#1801#0" expanded="true" />
               </folding>
@@ -88,12 +86,12 @@
         <option value="$PROJECT_DIR$/pyks_master/KSensrf.py" />
         <option value="$PROJECT_DIR$/pyks_master/enkf.py" />
         <option value="$PROJECT_DIR$/pyks_master/KSanimate.py" />
-        <option value="$PROJECT_DIR$/data.py" />
         <option value="$PROJECT_DIR$/reservoir.py" />
+        <option value="$PROJECT_DIR$/data.py" />
       </list>
     </option>
   </component>
-  <component name="ProjectFrameBounds" extendedState="7">
+  <component name="ProjectFrameBounds" extendedState="6">
     <option name="x" value="453" />
     <option name="y" value="49" />
     <option name="width" value="1394" />
@@ -107,7 +105,6 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
-      <pane id="Scope" />
       <pane id="ProjectPane">
         <subPane>
           <expand>
@@ -119,6 +116,7 @@
           <select />
         </subPane>
       </pane>
+      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
@@ -179,7 +177,7 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="64" y="-11" width="1857" height="1092" extended-state="7" />
+    <frame x="64" y="-11" width="1857" height="1092" extended-state="6" />
     <editor active="true" />
     <layout>
       <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.046943232" />
@@ -237,22 +235,22 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/data.py">
+    <entry file="file://$PROJECT_DIR$/reservoir.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="165">
-          <caret line="119" column="15" selection-start-line="119" selection-start-column="9" selection-end-line="119" selection-end-column="15" />
+        <state relative-caret-position="329">
+          <caret line="206" column="36" selection-start-line="206" selection-start-column="36" selection-end-line="206" selection-end-column="36" />
           <folding>
-            <element signature="e#597#615#0" expanded="true" />
+            <element signature="e#1783#1801#0" expanded="true" />
           </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/reservoir.py">
+    <entry file="file://$PROJECT_DIR$/data.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="244">
-          <caret line="192" lean-forward="true" selection-start-line="192" selection-end-line="192" />
+        <state relative-caret-position="200">
+          <caret line="121" column="12" lean-forward="true" selection-start-line="121" selection-start-column="12" selection-end-line="121" selection-end-column="12" />
           <folding>
-            <element signature="e#1783#1801#0" expanded="true" />
+            <element signature="e#597#615#0" expanded="true" />
           </folding>
         </state>
       </provider>

@@ -119,7 +119,7 @@ def kuramoto_sivashinsky(sequence_length=1000, n_sequence=1,  spatial_points=100
     # Octave functions are download from https://github.com/qyxiao/machine-learning-2016-spring/blob/master
     from oct2py import octave
     N = spatial_points
-    h = 0.25 # time step length
+    h = 0.0025 # time step length
     nstp = sequence_length
     a0 = np.zeros([N - 2, 1])
     L = 22.
