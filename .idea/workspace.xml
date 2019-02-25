@@ -3,9 +3,14 @@
   <component name="ChangeListManager">
     <list default="true" id="c6839d42-1734-4537-9c42-68634a0564fc" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.ipynb_checkpoints/kuramoto_sivashinsky_test-checkpoint.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/.ipynb_checkpoints/kuramoto_sivashinsky_test-checkpoint.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/SLM_input_data.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/SLM_predicted_data.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/SLM_timesteps_20000.npy" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/SLM_true_data.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/SLM_true_predicted_difference.png" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/data.py" beforeDir="false" afterPath="$PROJECT_DIR$/data.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/octave-workspace" beforeDir="false" afterPath="$PROJECT_DIR$/octave-workspace" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -15,11 +20,11 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/data.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="200">
-              <caret line="121" column="12" lean-forward="true" selection-start-line="121" selection-start-column="12" selection-end-line="121" selection-end-column="12" />
+            <state relative-caret-position="360">
+              <caret line="129" column="36" selection-start-line="129" selection-start-column="36" selection-end-line="129" selection-end-column="36" />
               <folding>
                 <element signature="e#597#615#0" expanded="true" />
               </folding>
@@ -27,11 +32,11 @@
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="false">
+      <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/reservoir.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="329">
-              <caret line="206" column="36" selection-start-line="206" selection-start-column="36" selection-end-line="206" selection-end-column="36" />
+            <state relative-caret-position="290">
+              <caret line="191" column="18" selection-start-line="191" selection-start-column="18" selection-end-line="191" selection-end-column="18" />
               <folding>
                 <element signature="e#1783#1801#0" expanded="true" />
               </folding>
@@ -43,11 +48,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>self.encoding_method</find>
-      <find>encoding_method</find>
-      <find>prin</find>
-      <find>n_inp</find>
-      <find>encode</find>
       <find>mat</find>
       <find>verbose</find>
       <find>memory_length</find>
@@ -73,6 +73,11 @@
       <find>abs</find>
       <find>scor</find>
       <find>self.res_w</find>
+      <find>a0</find>
+      <find>rand</find>
+      <find>resha</find>
+      <find>resh</find>
+      <find>sequence_length</find>
     </findStrings>
   </component>
   <component name="Git.Settings">
@@ -235,22 +240,22 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/reservoir.py">
+    <entry file="file://$PROJECT_DIR$/data.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="329">
-          <caret line="206" column="36" selection-start-line="206" selection-start-column="36" selection-end-line="206" selection-end-column="36" />
+        <state relative-caret-position="360">
+          <caret line="129" column="36" selection-start-line="129" selection-start-column="36" selection-end-line="129" selection-end-column="36" />
           <folding>
-            <element signature="e#1783#1801#0" expanded="true" />
+            <element signature="e#597#615#0" expanded="true" />
           </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/data.py">
+    <entry file="file://$PROJECT_DIR$/reservoir.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="200">
-          <caret line="121" column="12" lean-forward="true" selection-start-line="121" selection-start-column="12" selection-end-line="121" selection-end-column="12" />
+        <state relative-caret-position="290">
+          <caret line="191" column="18" selection-start-line="191" selection-start-column="18" selection-end-line="191" selection-end-column="18" />
           <folding>
-            <element signature="e#597#615#0" expanded="true" />
+            <element signature="e#1783#1801#0" expanded="true" />
           </folding>
         </state>
       </provider>
