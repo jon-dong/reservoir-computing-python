@@ -174,6 +174,22 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 i_data = np.mod(i_input, data_dim)
                 enc_input_data[:, :, i_input] = mat[:, :, i_data] > mini + np.ceil(i_input / data_dim) * step
             return enc_input_data
+        elif self.encoding_method == 'localbinary':
+            n_sequence, sequence_length, input_dim = mat.shape
+            # we reshape it to avoid problems with 3D matrices
+            # for now, we only work with 1D time series
+            mat = np.reshape(mat, (n_sequence, sequence_length))
+
+            mini = -0.55  # self.encoding_param[0]
+            maxi = 0.55  # self.encoding_param[1]
+            norm_mat = (mat - mini) / (maxi - mini)
+
+            step = np.random.uniform(0, 1, self.input_dim)
+
+            enc_input_data = np.zeros((n_sequence, sequence_length, self.input_dim))
+            for i_input in range(self.input_dim):
+                enc_input_data[:, :, i_input] = \
+                    np.mod((norm_mat - np.random.uniform()) // step[i_input], 2) == 0
         elif self.encoding_method is None:
             return mat
 

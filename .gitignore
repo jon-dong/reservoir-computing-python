@@ -9,3 +9,7 @@ __pycache__
 *.txt
 
 sftp-config\.json
+
+\.idea/
+
+\.ipynb_checkpoints/
