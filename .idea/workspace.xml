@@ -4,13 +4,11 @@
     <list default="true" id="c6839d42-1734-4537-9c42-68634a0564fc" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.ipynb_checkpoints/kuramoto_sivashinsky_test-checkpoint.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/.ipynb_checkpoints/kuramoto_sivashinsky_test-checkpoint.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/SLM_input_data.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/SLM_predicted_data.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/SLM_timesteps_20000.npy" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/SLM_true_data.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/SLM_true_predicted_difference.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data.py" beforeDir="false" afterPath="$PROJECT_DIR$/data.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mackey_glass_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/mackey_glass_test.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/reservoir.py" beforeDir="false" afterPath="$PROJECT_DIR$/reservoir.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -23,8 +21,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/data.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="360">
-              <caret line="129" column="36" selection-start-line="129" selection-start-column="36" selection-end-line="129" selection-end-column="36" />
+            <state relative-caret-position="1057">
+              <caret line="177" column="110" selection-start-line="177" selection-start-column="110" selection-end-line="177" selection-end-column="110" />
               <folding>
                 <element signature="e#597#615#0" expanded="true" />
               </folding>
@@ -35,8 +33,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/reservoir.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="290">
-              <caret line="191" column="18" selection-start-line="191" selection-start-column="18" selection-end-line="191" selection-end-column="18" />
+            <state relative-caret-position="398">
+              <caret line="255" selection-start-line="255" selection-end-line="255" />
               <folding>
                 <element signature="e#1783#1801#0" expanded="true" />
               </folding>
@@ -48,24 +46,8 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>mat</find>
-      <find>verbose</find>
-      <find>memory_length</find>
-      <find>exp</find>
-      <find>activ</find>
-      <find>seq</find>
-      <find>dim</find>
-      <find>ensrf</find>
-      <find>print</find>
-      <find>ani</find>
-      <find>input_w</find>
-      <find>input_dim</find>
-      <find>iter</find>
-      <find>data_dim</find>
-      <find>y</find>
       <find>sequ</find>
       <find>random_state</find>
-      <find>output_w</find>
       <find>enc</find>
       <find>encoding_param</find>
       <find>400</find>
@@ -75,9 +57,25 @@
       <find>self.res_w</find>
       <find>a0</find>
       <find>rand</find>
-      <find>resha</find>
       <find>resh</find>
       <find>sequence_length</find>
+      <find>res_stat</find>
+      <find>self.states</find>
+      <find>self.state</find>
+      <find>input_data</find>
+      <find>output_w</find>
+      <find>self.train</find>
+      <find>encode_and_feed_reservoir</find>
+      <find>forget</find>
+      <find>y</find>
+      <find>self.spatial_points</find>
+      <find>print</find>
+      <find>self.forget</find>
+      <find>resha</find>
+      <find>com</find>
+      <find>s</find>
+      <find>np</find>
+      <find>self.output_w</find>
     </findStrings>
   </component>
   <component name="Git.Settings">
@@ -91,16 +89,16 @@
         <option value="$PROJECT_DIR$/pyks_master/KSensrf.py" />
         <option value="$PROJECT_DIR$/pyks_master/enkf.py" />
         <option value="$PROJECT_DIR$/pyks_master/KSanimate.py" />
-        <option value="$PROJECT_DIR$/reservoir.py" />
         <option value="$PROJECT_DIR$/data.py" />
+        <option value="$PROJECT_DIR$/reservoir.py" />
       </list>
     </option>
   </component>
   <component name="ProjectFrameBounds" extendedState="6">
-    <option name="x" value="453" />
-    <option name="y" value="49" />
-    <option name="width" value="1394" />
-    <option name="height" value="976" />
+    <option name="x" value="992" />
+    <option name="y" value="-4" />
+    <option name="width" value="928" />
+    <option name="height" value="1084" />
   </component>
   <component name="ProjectLevelVcsManager">
     <ConfirmationsSetting value="1" id="Add" />
@@ -185,7 +183,7 @@
     <frame x="64" y="-11" width="1857" height="1092" extended-state="6" />
     <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.046943232" />
+      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.022925764" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
@@ -196,7 +194,7 @@
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
       <window_info anchor="bottom" id="TODO" order="6" />
       <window_info anchor="bottom" id="Version Control" order="7" />
-      <window_info active="true" anchor="bottom" id="Terminal" order="8" visible="true" weight="0.28526646" />
+      <window_info active="true" anchor="bottom" id="Terminal" order="8" visible="true" weight="0.276907" />
       <window_info anchor="bottom" id="Event Log" order="9" side_tool="true" />
       <window_info anchor="bottom" id="Python Console" order="10" />
       <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
@@ -235,15 +233,22 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/main.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="195">
-          <caret line="40" column="37" selection-start-line="40" selection-start-column="37" selection-end-line="40" selection-end-column="37" />
+        <state relative-caret-position="220">
+          <caret line="43" column="28" selection-start-line="43" selection-start-column="28" selection-end-line="43" selection-end-column="28" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file:///usr/local/lib/python3.5/dist-packages/numpy/core/fromnumeric.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-410">
+          <caret line="1470" column="4" selection-start-line="1470" selection-start-column="4" selection-end-line="1470" selection-end-column="4" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/data.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="360">
-          <caret line="129" column="36" selection-start-line="129" selection-start-column="36" selection-end-line="129" selection-end-column="36" />
+        <state relative-caret-position="1057">
+          <caret line="177" column="110" selection-start-line="177" selection-start-column="110" selection-end-line="177" selection-end-column="110" />
           <folding>
             <element signature="e#597#615#0" expanded="true" />
           </folding>
@@ -252,8 +257,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/reservoir.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="290">
-          <caret line="191" column="18" selection-start-line="191" selection-start-column="18" selection-end-line="191" selection-end-column="18" />
+        <state relative-caret-position="398">
+          <caret line="255" selection-start-line="255" selection-end-line="255" />
           <folding>
             <element signature="e#1783#1801#0" expanded="true" />
           </folding>

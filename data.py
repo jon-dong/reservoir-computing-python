@@ -172,8 +172,9 @@ def roll_and_concat(input_data, roll_num=1):
     :param input_data: the original data that will be rolled by axis1
     :param roll_num: how many times will be the original data rolled and concatenated with itself
     '''
-    rolled_data = input_data
-    for i in range(roll_num - 1):
-        rolled_data = np.concatenate((rolled_data, np.roll(input_data, -(1 + i), axis=1)), axis=2)
+    n_sequence, sequence_length, spatial_points = input_data.shape
+    rolled_data = np.zeros((n_sequence, sequence_length, spatial_points * roll_num))
+    for i in range(roll_num):
+        rolled_data[:, :, i * spatial_points:(i + 1) * spatial_points] = np.roll(input_data, -(i + 1), axis=1)
 
     return rolled_data
