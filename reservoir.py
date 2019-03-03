@@ -150,7 +150,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.encoding_method == 'threshold':
             return mat > self.encoding_param
         elif self.encoding_method == 'phase':
-            mat = np.array(mat/np.amax(np.abs(mat))*255, dtype='int')/255
+            mat = np.array((mat - np.amin(mat))/(np.amax(mat) + np.amin(mat))*255, dtype='int')/255
 
             # TODO: add higher encoding cases for SLM, e.g. 8bit->16bit (the comments bellow relates to that)
             # n_sequence, sequence_length, spatial_points = mat.shape
@@ -164,7 +164,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             #     sub_sequence_length = sub_sequence.shape[1]
             #     for j in range(n):
             #         enc_input_data[:, i*sub_sequence_length+j::n, :] = sub_sequence
-            return np.exp(1j * mat * np.pi)
+            return np.exp(1j * mat * 2*np.pi)
         elif self.encoding_method == 'naivebinary':
             n_sequence, sequence_length, spatial_points = mat.shape
 
@@ -218,8 +218,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
                 if update:
                     state = self.res_states[i_sequence, time_step, :] # TODO: vectorize the case of reservoir update
-                    # self.res_states = input_data
-                    # return
 
                 if self.random_projection == 'simulation':
                     state = act(np.dot(
@@ -342,7 +340,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return total_pred_output
 
     def score(self, input_data, true_output):
-        pred_output = np.real_if_close(self.predict(input_data), tol=1e5)
+        pred_output = self.predict(input_data)
         # return pred_output
         true_output = true_output.reshape(-1, true_output.shape[-1])
         score = self.score_metric(pred_output, true_output)
@@ -369,9 +367,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
             concat_states = np.concatenate((np.real(self.res_states), np.imag(self.res_states),
                                             np.real(enc_input_data[:, self.forget:, :]),
                                             np.imag(enc_input_data[:, self.forget:, :])), axis=2)
+            print(concat_states.shape)
         else:
-            concat_states = np.concatenate(
-                (self.res_states, enc_input_data[:, self.forget:, :]), axis=2)
+            concat_states = np.concatenate((self.res_states, enc_input_data[:, self.forget:, :]), axis=2)
+            print(concat_states.shape)
 
         iterate_end = time.time()
         self.iterate_timer = iterate_end - start
