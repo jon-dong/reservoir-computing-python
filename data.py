@@ -81,6 +81,10 @@ def mackey_glass(sequence_length=1000, n_sequence=1, data_dim=1, random_state=No
     h = 1  # time step
     memory_length = int(tau/h)
 
+    # The dataset is calculated for longer length, then the additional part will be cut from begining of dataset.
+    # This is done because the beginning of the dataset is always spoiled
+    add_to_sec = round(sequence_length/10)
+    sequence_length = sequence_length + add_to_sec
     input_data = np.zeros((n_sequence, sequence_length, data_dim))  # last dimension is input_dim = 1
     # Initialization of Mackey Glass
     input_data[:, :memory_length] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(n_sequence, memory_length, 1))
@@ -91,7 +95,7 @@ def mackey_glass(sequence_length=1000, n_sequence=1, data_dim=1, random_state=No
         (1 + input_data[:, iSequence - memory_length, 0] ** n)
 
     # Preprocessing (done by other people, seems to help)
-    input_data = np.tanh(input_data - 1)
+    input_data = np.tanh(input_data - 1)[:, add_to_sec:, :]
 
     return input_data
 

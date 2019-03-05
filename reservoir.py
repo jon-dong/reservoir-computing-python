@@ -146,7 +146,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
 
     def encode(self, mat):
-        """ Encodes the input before being fed in the reservoir """
+        """
+        :param mat: shape is (sequence_length x spatial_points)
+        :return: Encodes the input before being fed in the reservoir
+        """
         if self.encoding_method == 'threshold':
             return mat > self.encoding_param
         elif self.encoding_method == 'phase':
@@ -166,16 +169,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
             #         enc_input_data[:, i*sub_sequence_length+j::n, :] = sub_sequence
             return np.exp(1j * mat * 2*np.pi)
         elif self.encoding_method == 'naivebinary':
-            n_sequence, sequence_length, spatial_points = mat.shape
+            sequence_length, spatial_points = mat.shape
 
             mini = np.min(mat) # -self.encoding_param
             maxi = np.max(mat) # self.encoding_param
             step = (maxi - mini) / np.ceil(self.encoded_spatial_points / spatial_points)
             
-            enc_input_data = np.zeros((n_sequence, sequence_length, self.encoded_spatial_points))
+            enc_input_data = np.zeros((sequence_length, self.encoded_spatial_points))
             for i_input in range(self.encoded_spatial_points):
                 i_data = np.mod(i_input, spatial_points)
-                enc_input_data[:, :, i_input] = mat[:, :, i_data] > mini + np.ceil(i_input / spatial_points) * step
+                enc_input_data[:, i_input] = mat[:, i_data] > mini + np.ceil(i_input / spatial_points) * step
             return enc_input_data
         elif self.encoding_method is None:
             return mat
@@ -186,7 +189,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return lambda x: np.tanh(x)
         elif self.activation_fun == 'phase':
             return lambda x: np.exp(1j * np.abs(x) / np.amax(np.abs(x)) * 2 * np.pi)
-        elif self.activation_fun == 'phase_8bit':
+        elif self.activation_fun == 's':
             def fun(x):
                 x = np.array(np.abs(x) / np.amax(np.abs(x)) * 255, dtype='int') / 255
                 return np.exp(1j * x * 2 * np.pi)
@@ -201,48 +204,41 @@ class Reservoir(BaseEstimator, RegressorMixin):
                        during the prediction in order to update the reservoir state after each timestep prediction
         :return: Iterates the reservoir feeding by input_data, returns all the reservoir states
         """
-        n_sequence, sequence_length, _ = input_data.shape
+        sequence_length, _ = input_data.shape
         if not update:
-            self.res_states = np.zeros((n_sequence, sequence_length - self.forget, self.n_res), dtype='cfloat')
+            self.res_states = np.zeros((sequence_length - self.forget, self.n_res), dtype='cfloat')
         else:
             self.forget = 0
 
         act = self.activation()
 
-        for i_sequence in range(n_sequence):
+        # Resets the reservoir state, for new runs
+        state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
 
-            # Resets the reservoir state, for new runs
-            state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
+        for time_step in tqdm(range(sequence_length), file=sys.stdout):
 
-            for time_step in tqdm(range(sequence_length), file=sys.stdout):
+            if update:
+                state = self.res_states[time_step, :] # TODO: vectorize the case of reservoir update
 
-                if update:
-                    state = self.res_states[i_sequence, time_step, :] # TODO: vectorize the case of reservoir update
-
-                if self.random_projection == 'simulation':
+            if self.random_projection == 'simulation':
+                state = act(np.dot(
+                    self.input_w, input_data[time_step, :]) + np.dot(
+                    self.res_w, state))
+            elif self.random_projection == 'out of core':
+                if self.weights_type == 'gaussian':
                     state = act(np.dot(
-                        self.input_w, input_data[i_sequence, time_step, :]) + np.dot(
-                        self.res_w, state))
-                elif self.random_projection == 'out of core':
-                    if self.weights_type == 'gaussian':
-                        state = act(np.dot(
-                            self.input_w, input_data[i_sequence, time_step, :]) + np.dot(
-                            self.res_w, state[i_sequence, time_step]))
-                    elif self.weights_type == 'complex gaussian':
-                        state = act(np.dot(
-                            self.input_w_re, input_data[i_sequence, time_step, :]) + 1j * np.dot(
-                            self.input_w_im, input_data[i_sequence, time_step, :]) + np.dot(
-                            self.res_w_re, state) + 1j * np.dot(self.res_w_im, state))
-                if time_step >= self.forget:
-                    self.res_states[i_sequence, time_step - self.forget, :] = state
+                        self.input_w, input_data[time_step, :]) + np.dot(
+                        self.res_w, state[time_step]))
+                elif self.weights_type == 'complex gaussian':
+                    state = act(np.dot(
+                        self.input_w_re, input_data[time_step, :]) + 1j * np.dot(
+                        self.input_w_im, input_data[time_step, :]) + np.dot(
+                        self.res_w_re, state) + 1j * np.dot(self.res_w_im, state))
+            if time_step >= self.forget:
+                self.res_states[time_step - self.forget, :] = state
 
     def train(self, concat_states, y):
         """ Performs a linear regression """
-        concat_states = concat_states.reshape(-1, concat_states.shape[-1])
-        if y.shape[-1] == 1:
-            y = np.ravel(y)
-        else:
-            y = y.reshape(-1, y.shape[-1])
 
         if self.train_method == 'explicit':
             self.output_w, res, rnk, s = lstsq(concat_states, y)
@@ -255,14 +251,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf.fit(concat_states, y)
             self.output_w = clf.coef_.T
         elif self.train_method == 'sgd':
-            clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=50000, tol=1e-5, alpha=self.train_param)
+            clf = sklearn.linear_model.SGDRegressor(
+                fit_intercept=False, max_iter=50000, tol=1e-5, alpha=self.train_param)
             clf.fit(concat_states, y)
             self.output_w = clf.coef_.T
 
     def output(self, concat_states):
         """ Computes the output given reservoir states and output weights """
-        concat_states = concat_states.reshape(-1, concat_states.shape[-1])
         total_output = np.dot(concat_states, self.output_w)
+        if len(total_output.shape) == 1:
+            total_output = total_output.reshape(-1, 1)
         return total_output
 
     def score_metric(self, pred_output, output):
@@ -278,19 +276,25 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Start of training...')
         self.initialize()
 
-        concat_states = self.featurize(input_data)
+        n_sequence, sequence_length, spatial_points = input_data.shape
 
-        y_ = y[:, self.forget:, :]
-        self.train(concat_states, y_)
+        concat_states = np.zeros((n_sequence*(sequence_length-self.forget), self.encoded_spatial_points+self.n_res))
+        for n in range(n_sequence):
+            concat_states[n*(sequence_length-self.forget):(n+1)*(sequence_length-self.forget), :] = self.featurize(
+                input_data[n, :, :].reshape(sequence_length, spatial_points))
+
+        y = y[:, self.forget:, :] ############## TODO: do rolling here
+        if y.shape[-1] == 1:
+            true_output = np.ravel(y)
+        else:
+            true_output = y.reshape(-1, y.shape[-1])
+
+        self.train(concat_states, true_output)
         pred_output = self.output(concat_states)
 
         train_end = time.time()
         self.train_timer = train_end - start
 
-        if y_.shape[-1] == 1:
-            true_output = np.ravel(y_)
-        else:
-            true_output = y_.reshape(-1, y_.shape[-1])
         self.fit_score = self.score_metric(pred_output, true_output)
 
         if self.verbose:
@@ -313,22 +317,26 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return self
 
     def predict(self, input_data):
-        """ Iterates the reservoir with input, predicts using the fit output weights """
+        """
+        :param input_data: size of (sequence_length x spatial_points)
+        :return: Iterates the reservoir with input, predicts fixed number of timeesteps given by each_prediction_step
+                then updates the reservoir by the prediction, predicts the next fixed number of timesteps and repeats.
+        """
 
-        _, sequence_length, spatial_points = input_data.shape
+        sequence_length, spatial_points = input_data.shape
+        spatial_points = spatial_points * self.each_pred_step
 
 
         start = time.time()
         if self.verbose:
             print('Start of testing...')
-        self.res_states = None
 
         update = False
         total_pred_output = np.zeros((sequence_length-self.forget, spatial_points * self.total_pred_steps))
         for pred_step in range(self.total_pred_steps):
             concat_states = self.featurize(input_data, update=update)
-            input_data = self.output(concat_states).reshape(1, -1, spatial_points) # inside np.array([.]) to reshape it similar to input data
-            total_pred_output[:, pred_step*spatial_points:(pred_step+1)*spatial_points] = input_data[0]
+            input_data = self.output(concat_states)
+            total_pred_output[:, pred_step*spatial_points:(pred_step+1)*spatial_points] = input_data
             update = True
 
         test_end = time.time()
@@ -340,9 +348,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return total_pred_output
 
     def score(self, input_data, true_output):
-        pred_output = self.predict(input_data)
-        # return pred_output
+        """
+        :param input_data: size is (sequence_length x spatial_points)
+        :param true_output: size is (sequence_length x spatial_points)
+        :return:
+        """
+        input_data = input_data.reshape(-1, input_data.shape[-1])
         true_output = true_output.reshape(-1, true_output.shape[-1])
+        true_output = true_output[self.forget:, :]
+        pred_output = self.predict(input_data)
         score = self.score_metric(pred_output, true_output)
         if self.verbose:
             print('Testing finished. Elapsed time:')
@@ -366,11 +380,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if np.iscomplex(enc_input_data).any():
             concat_states = np.concatenate((np.real(self.res_states), np.imag(self.res_states),
                                             np.real(enc_input_data[:, self.forget:, :]),
-                                            np.imag(enc_input_data[:, self.forget:, :])), axis=2)
-            print(concat_states.shape)
+                                            np.imag(enc_input_data[:, self.forget:, :])), axis=1)
         else:
-            concat_states = np.concatenate((self.res_states, enc_input_data[:, self.forget:, :]), axis=2)
-            print(concat_states.shape)
+            concat_states = np.concatenate((self.res_states, enc_input_data[self.forget:, :]), axis=1)
 
         iterate_end = time.time()
         self.iterate_timer = iterate_end - start
