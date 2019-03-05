@@ -57,7 +57,7 @@ import encode
 
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self, input_dim=1, n_res=100, input_scale=1, res_scale=1,
-                 random_projection='simulation', weights_type='gaussian', opu_transform=None,
+                 random_projection='simulation', weights_type='gaussian',
                  encoding_method=None, encoding_param=None,
                  activation_fun='tanh', activation_param=None, forget=100,
                  train_method='explicit', train_param=None,
@@ -76,7 +76,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.train_method = train_method
         self.train_param = train_param
         self.random_state = random_state
-        self.opu_transform = opu_transform
         self.save = save
         self.verbose = verbose
 
@@ -88,6 +87,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.encode_timer = None
         self.iterate_timer = None
         self.train_timer = None
+
+        if self.random_projection == 'opu':
+            from lightonopu.opu import OPU
+            from lightonml.random_projections.opu import OPURandomMapping
+
+            self.opu = OPU()
+            self.opu_n_components = self.n_res  # number of random projections
+            self.random_mapping = OPURandomMapping(opu=self.opu, n_components=self.opu_n_components)
+            # Use "disable_pbar=True" if needed
 
     def initialize(self):
         """ Initializes the reservoir state, the input and reservoir weights """
@@ -150,12 +158,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
         concat_states = np.empty((n_sequence, sequence_length-self.forget, n * (self.n_res+input_dim)), dtype='cfloat')
         act = self.activation()
 
+        # Initialize hardware if we use the optical setup
+        if self.random_projection == 'opu':
+            self.opu.open()
         for i_sequence in range(n_sequence):
             self.reset()
             for time_step in tqdm(range(sequence_length), file=sys.stdout):
                 if self.random_projection == 'simulation':
                     self.state = act(np.dot(self.input_w, input_data[i_sequence, time_step, :]) +
                                      np.dot(self.res_w, self.state))
+                elif self.random_projection == 'opu':
+                    self.state = (self.state > 25)
+                    self.state = self.random_mapping.fit_transform(np.concatenate(
+                        (self.state, input_data[i_sequence, time_step, :].T)))
                 if time_step >= self.forget:
                     if np.iscomplex(input_data).any():
                         concat_states[i_sequence, time_step - self.forget, :] = np.concatenate(
@@ -164,6 +179,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     else:
                         concat_states[i_sequence, time_step-self.forget, :] = \
                             np.concatenate((self.state, input_data[i_sequence, time_step, :].T))
+        # Release hardware if we use the optical setup
+        if self.random_projection =='opu':
+            self.opu.close()
         return concat_states
 
     def train(self, concat_states, y):
@@ -178,6 +196,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             output_w, res, rnk, s = lstsq(concat_states, y)
             return output_w
         elif self.train_method == 'explicit_sklearn':
+            concat_states = np.real_if_close(concat_states, tol=1e5)
             clf = sklearn.linear_model.LinearRegression(fit_intercept=False)
             clf.fit(concat_states, y)
             return clf.coef_.T
@@ -187,6 +206,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             clf.fit(concat_states, y)
             return clf.coef_.T
         elif self.train_method == 'sgd':
+            concat_states = np.real_if_close(concat_states, tol=1e5)
             clf = sklearn.linear_model.SGDRegressor(fit_intercept=False, max_iter=50000,
                                                     tol=1e-5, alpha=self.train_param)
             clf.fit(concat_states, y)
