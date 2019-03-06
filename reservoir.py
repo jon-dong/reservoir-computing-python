@@ -61,7 +61,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  encoding_method=None, encoding_param=None,
                  activation_fun='tanh', activation_param=None, forget=100,
                  train_method='explicit', train_param=None,
-                 random_state=None, save=0, verbose=1):
+                 parallel_runs=None, random_state=None, save=0, verbose=1):
         self.input_dim = input_dim
         self.n_res = n_res
         self.input_scale = input_scale
@@ -75,6 +75,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.forget = forget
         self.train_method = train_method
         self.train_param = train_param
+        self.parallel_runs = parallel_runs
         self.random_state = random_state
         self.save = save
         self.verbose = verbose
@@ -96,6 +97,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             self.opu_n_components = self.n_res  # number of random projections
             self.random_mapping = OPURandomMapping(opu=self.opu, n_components=self.opu_n_components)
             # Use "disable_pbar=True" if needed
+            self.parallel_runs = 100
 
     def initialize(self):
         """ Initializes the reservoir state, the input and reservoir weights """
@@ -119,7 +121,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def reset(self):
         """ Resets the reservoir state, for new runs """
-        self.state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
+        # To-do: add different statistics
+        if self.parallel_runs is None:
+            self.state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
+        else:
+            self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res, self.parallel_runs))
 
     def encode(self, mat):
         """ Encodes the input before being fed in the reservoir """
@@ -129,10 +135,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return encode.phase_encoding(mat, scaling_factor=np.pi, n_levels=None)
         elif self.encoding_method == 'naive_binary':
             n_sequence, sequence_length, data_dim = mat.shape
-            return encode.naive_binary(mat, binary_dim=self.input_dim / data_dim)
+            return encode.naive_binary(mat, binary_dim=int(self.input_dim / data_dim))
         elif self.encoding_method == 'local_binary':
             n_sequence, sequence_length, data_dim = mat.shape
-            return encode.local_binary(mat, binary_dim=self.input_dim / data_dim)
+            return encode.local_binary(mat, binary_dim=int(self.input_dim / data_dim))
         elif self.encoding_method is None:
             return mat
 
@@ -154,33 +160,40 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir feeding input_data, returns all the reservoir states """
         n_sequence, sequence_length, input_dim = input_data.shape
 
-        n = 2 if np.iscomplex(input_data).any() else 1
-        concat_states = np.empty((n_sequence, sequence_length-self.forget, n * (self.n_res+input_dim)), dtype='cfloat')
+        n_complex = 2 if np.iscomplex(input_data).any() else 1
+        n_parallel = self.parallel_runs if self.parallel_runs is not None else 1
+        concat_states = np.empty((n_sequence, sequence_length-self.forget,
+                                  n_complex * (self.n_res+input_dim)), dtype='cfloat')
         act = self.activation()
 
         # Initialize hardware if we use the optical setup
         if self.random_projection == 'opu':
             self.opu.open()
-        for i_sequence in range(n_sequence):
+        for i_sequence in range(int(n_sequence/n_parallel)):
             self.reset()
+            idx_sequence = np.arange(i_sequence*self.parallel_runs, (i_sequence+1)*self.parallel_runs) \
+                if self.parallel_runs is not None \
+                else i_sequence
             for time_step in tqdm(range(sequence_length), file=sys.stdout):
                 if self.random_projection == 'simulation':
-                    self.state = act(np.dot(self.input_w, input_data[i_sequence, time_step, :]) +
+                    self.state = act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
                                      np.dot(self.res_w, self.state))
                 elif self.random_projection == 'opu':
                     self.state = (self.state > 25)
                     self.state = self.random_mapping.fit_transform(np.concatenate(
-                        (self.state, input_data[i_sequence, time_step, :].T)))
+                        (self.state, input_data[idx_sequence, time_step, :].T)))
                 if time_step >= self.forget:
                     if np.iscomplex(input_data).any():
-                        concat_states[i_sequence, time_step - self.forget, :] = np.concatenate(
-                            (np.real(self.state), np.imag(self.state), np.real(input_data[i_sequence, time_step, :]).T,
-                             np.imag(input_data[i_sequence, time_step, :]).T))
+                        concat_states[idx_sequence, time_step - self.forget, :] = np.concatenate(
+                            (np.real(self.state),
+                             np.imag(self.state),
+                             np.real(input_data[idx_sequence, time_step, :]).T,
+                             np.imag(input_data[idx_sequence, time_step, :]).T))
                     else:
-                        concat_states[i_sequence, time_step-self.forget, :] = \
-                            np.concatenate((self.state, input_data[i_sequence, time_step, :].T))
+                        concat_states[idx_sequence, time_step-self.forget, :] = \
+                            np.concatenate((self.state, input_data[idx_sequence, time_step, :].T)).T
         # Release hardware if we use the optical setup
-        if self.random_projection =='opu':
+        if self.random_projection == 'opu':
             self.opu.close()
         return concat_states
 
