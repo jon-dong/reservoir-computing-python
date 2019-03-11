@@ -5,7 +5,6 @@
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.ipynb_checkpoints/kuramoto_sivashinsky_test-checkpoint.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/.ipynb_checkpoints/kuramoto_sivashinsky_test-checkpoint.ipynb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/.ipynb_checkpoints/mackey_glass_test-checkpoint.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data.py" beforeDir="false" afterPath="$PROJECT_DIR$/data.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/kuramoto_sivashinsky_test.ipynb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/mackey_glass_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/mackey_glass_test.ipynb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/reservoir.py" beforeDir="false" afterPath="$PROJECT_DIR$/reservoir.py" afterDir="false" />
@@ -21,7 +20,7 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/data.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="98">
+            <state relative-caret-position="2085">
               <caret line="140" column="34" selection-start-line="140" selection-start-column="34" selection-end-line="168" selection-end-column="65" />
               <folding>
                 <element signature="e#597#615#0" expanded="true" />
@@ -33,11 +32,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/reservoir.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="353">
-              <caret line="223" column="35" lean-forward="true" selection-start-line="223" selection-start-column="35" selection-end-line="223" selection-end-column="35" />
-              <folding>
-                <element signature="e#1783#1801#0" expanded="true" />
-              </folding>
+            <state relative-caret-position="442">
+              <caret line="406" column="41" selection-start-line="406" selection-start-column="41" selection-end-line="406" selection-end-column="41" />
             </state>
           </provider>
         </entry>
@@ -46,11 +42,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>scor</find>
-      <find>self.res_w</find>
-      <find>a0</find>
-      <find>rand</find>
-      <find>resh</find>
       <find>sequence_length</find>
       <find>res_stat</find>
       <find>self.states</find>
@@ -76,7 +67,16 @@
       <find>y</find>
       <find>output_w</find>
       <find>concat_states</find>
+      <find>self.input_w</find>
+      <find>each_pred_step</find>
+      <find>total_pred_steps</find>
+      <find>phase_8bit</find>
+      <find>random_projection</find>
     </findStrings>
+    <replaceStrings>
+      <replace>steps_in_each_pred</replace>
+      <replace>steps_in_total_pred</replace>
+    </replaceStrings>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -89,8 +89,8 @@
         <option value="$PROJECT_DIR$/pyks_master/KSensrf.py" />
         <option value="$PROJECT_DIR$/pyks_master/enkf.py" />
         <option value="$PROJECT_DIR$/pyks_master/KSanimate.py" />
-        <option value="$PROJECT_DIR$/reservoir.py" />
         <option value="$PROJECT_DIR$/data.py" />
+        <option value="$PROJECT_DIR$/reservoir.py" />
       </list>
     </option>
   </component>
@@ -108,6 +108,7 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
+      <pane id="Scope" />
       <pane id="ProjectPane">
         <subPane>
           <expand>
@@ -119,7 +120,6 @@
           <select />
         </subPane>
       </pane>
-      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
@@ -181,7 +181,6 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="64" y="-11" width="1857" height="1092" extended-state="6" />
-    <editor active="true" />
     <layout>
       <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.022925764" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
@@ -245,9 +244,16 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$USER_HOME$/.PyCharmCE2018.3/system/python_stubs/-1247971764/numpy/core/multiarray.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="220">
+          <caret line="4428" column="8" selection-start-line="4428" selection-start-column="8" selection-end-line="4428" selection-end-column="8" />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/data.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="98">
+        <state relative-caret-position="2085">
           <caret line="140" column="34" selection-start-line="140" selection-start-column="34" selection-end-line="168" selection-end-column="65" />
           <folding>
             <element signature="e#597#615#0" expanded="true" />
@@ -257,11 +263,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/reservoir.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="353">
-          <caret line="223" column="35" lean-forward="true" selection-start-line="223" selection-start-column="35" selection-end-line="223" selection-end-column="35" />
-          <folding>
-            <element signature="e#1783#1801#0" expanded="true" />
-          </folding>
+        <state relative-caret-position="442">
+          <caret line="406" column="41" selection-start-line="406" selection-start-column="41" selection-end-line="406" selection-end-column="41" />
         </state>
       </provider>
     </entry>

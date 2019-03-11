@@ -50,15 +50,12 @@ import time
 from tqdm import tqdm
 import sys
 
-# from lightonml.random_projections.opu import OPURandomMapping
-# from lightonopu.opu import OPU
-
 
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self, encoded_spatial_points, n_res=100, input_scale=1, res_scale=1,
                  random_projection='simulation', weights_type='gaussian', opu_transform=None,
                  encoding_method=None, encoding_param=None, activation_fun='tanh', activation_param=None,
-                 forget=100, total_pred_steps = 100, each_pred_step = 1, train_method='explicit', train_param=None,
+                 forget=100, steps_in_total_pred = 100, steps_in_each_pred = 100, train_method='explicit', train_param=None,
                  random_state=None, save=0, verbose=1):
         self.encoded_spatial_points = encoded_spatial_points
         self.n_res = n_res
@@ -77,14 +74,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.opu_transform = opu_transform
         self.save = save
         self.verbose = verbose
-        self.each_pred_step = each_pred_step # number of steps algorithm predicts, then updates the reservoir accordingly
-        self.total_pred_steps = total_pred_steps
+        self.steps_in_each_pred = steps_in_each_pred # number of steps algorithm predicts, then updates the reservoir accordingly
+        self.steps_in_total_pred = steps_in_total_pred
 
         self.input_w = None
-        self.res_w = None
+        self.res_w = None # has to be int^2 in experiment
         self.output_w = None
         self.res_states = None
-        self.x = None
+        self.spatial_points = None
+        self.eng = None
 
     def initialize(self):
         """ Initializes the reservoir state, the input and reservoir weights """
@@ -96,7 +94,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     size=(self.n_res, self.encoded_spatial_points))
                 self.res_w = self.random_state.normal(loc=0., scale=self.res_scale/np.sqrt(self.n_res),
                     size=(self.n_res, self.n_res))
-            elif self.weights_type == 'complex gaussian': 
+            elif self.weights_type == 'complex gaussian':
                 self.input_w = 1j * self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.encoded_spatial_points),
                     size=(self.n_res, self.encoded_spatial_points))
                 self.input_w += self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(self.encoded_spatial_points),
@@ -153,32 +151,46 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.encoding_method == 'threshold':
             return mat > self.encoding_param
         elif self.encoding_method == 'phase':
-            mat = np.array((mat - np.amin(mat))/(np.amax(mat) + np.amin(mat))*255, dtype='int')/255
+            # mat = np.array((mat - np.amin(mat))/(np.amax(mat) - np.amin(mat))*255, dtype='int')/255
 
-            # TODO: add higher encoding cases for SLM, e.g. 8bit->16bit (the comments bellow relates to that)
-            # n_sequence, sequence_length, spatial_points = mat.shape
-            # slm_enc = 256
-            # n = np.ceil(self.encoded_spatial_points / spatial_points)
-            # enc = n*slm_enc - 1
-            # mat = np.array(mat/np.amax(abs(mat))*enc_depth, dtype='int')/enc_depth*np.amax(abs(mat))
-            # enc_input_data = np.zeros((n_sequence, sequence_length, self.encoded_spatial_points))
-            # for i in range(n):
-            #     sub_sequence = mat[:,i::n,:]
-            #     sub_sequence_length = sub_sequence.shape[1]
-            #     for j in range(n):
-            #         enc_input_data[:, i*sub_sequence_length+j::n, :] = sub_sequence
-            return np.exp(1j * mat * 2*np.pi)
+            sequence_length, spatial_points = mat.shape
+            slm_enc = 256
+            n = int(self.encoded_spatial_points / spatial_points)
+            enc = n * slm_enc - 1
+            mat = np.array((mat - np.amin(mat))/(np.amax(mat) - np.amin(mat))*enc, dtype='int')
+            encoded_mat = np.zeros((sequence_length, n * spatial_points))
+            mat0 = np.mod(mat, slm_enc)
+            for i in range(n - 1):
+                encoded_mat[:, i * spatial_points:(i + 1) * spatial_points] = np.array(
+                    (mat - mat0) /slm_enc, dtype=bool)*slm_enc
+                mat0 = mat0 + encoded_mat[:, i * spatial_points:(i + 1) * spatial_points]
+            encoded_mat[:, (n - 1)*spatial_points:n*spatial_points] = np.mod(mat, slm_enc)
+            encoded_mat = encoded_mat/slm_enc
+            # encoded_mat = encoded_mat.reshape(
+            #     sequence_length, n, spatial_points).T.reshape(n * spatial_points, sequence_length).T
+            return np.exp(1j * encoded_mat * 2*np.pi)
         elif self.encoding_method == 'naivebinary':
             sequence_length, spatial_points = mat.shape
 
-            mini = np.min(mat) # -self.encoding_param
-            maxi = np.max(mat) # self.encoding_param
-            step = (maxi - mini) / np.ceil(self.encoded_spatial_points / spatial_points)
-            
+            mini = np.min(mat)
+            maxi = np.max(mat)
+            n_bins = int(np.ceil(self.encoded_spatial_points / spatial_points))
+            step = (maxi - mini) / n_bins
             enc_input_data = np.zeros((sequence_length, self.encoded_spatial_points))
-            for i_input in range(self.encoded_spatial_points):
-                i_data = np.mod(i_input, spatial_points)
-                enc_input_data[:, i_input] = mat[:, i_data] > mini + np.ceil(i_input / spatial_points) * step
+            for i_bin in range(n_bins):
+                enc_input_data[:, i_bin * spatial_points:(i_bin + 1) * spatial_points] = mat > mini + i_bin * step
+            return enc_input_data
+        elif self.encoding_method == 'binarybins':
+            sequence_length, spatial_points = mat.shape
+
+            mini = np.min(mat)
+            maxi = np.max(mat)
+            n_bins = int(np.ceil(self.encoded_spatial_points/spatial_points))
+            step = (maxi - mini) / n_bins
+            enc_input_data = np.zeros((sequence_length, self.encoded_spatial_points))
+            for i_bin in range(n_bins):
+                enc_input_data[:, i_bin*spatial_points:(i_bin+1)*spatial_points] = np.prod(
+                    [mat>mini+i_bin*step , mat<mini+(i_bin+1)*step], axis=0)
             return enc_input_data
         elif self.encoding_method is None:
             return mat
@@ -189,10 +201,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return lambda x: np.tanh(x)
         elif self.activation_fun == 'phase':
             return lambda x: np.exp(1j * np.abs(x) / np.amax(np.abs(x)) * 2 * np.pi)
-        elif self.activation_fun == 's':
+        elif self.activation_fun == 'phase_8bit':
             def fun(x):
-                x = np.array(np.abs(x) / np.amax(np.abs(x)) * 255, dtype='int') / 255
-                return np.exp(1j * x * 2 * np.pi)
+                x = np.array(np.abs(x) / np.amax(np.abs(x))*255, dtype='int') / 255
+                return np.exp(1j*x*2*np.pi)
             return fun
         elif self.activation_fun == 'binary':
             return lambda x: np.abs(x) > np.median(np.abs(x)) # to activate the half of the neurons
@@ -204,38 +216,59 @@ class Reservoir(BaseEstimator, RegressorMixin):
                        during the prediction in order to update the reservoir state after each timestep prediction
         :return: Iterates the reservoir feeding by input_data, returns all the reservoir states
         """
-        sequence_length, _ = input_data.shape
-        if not update:
-            self.res_states = np.zeros((sequence_length - self.forget, self.n_res), dtype='cfloat')
-        else:
-            self.forget = 0
-
         act = self.activation()
 
-        # Resets the reservoir state, for new runs
-        state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
+        if self.random_projection == 'optical_setup':
+            if self.eng is None:
+                import matlab.engine
+                import scipy.io as sio
+                self.eng = matlab.engine.start_matlab()
+                self.eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
+                self.eng.open_all(nargout=0)
+                cam_dim = np.array([175-np.sqrt(self.n_res)/2, 175+np.sqrt(self.n_res)/2], dtype='int')
+                phase_vec = np.zeros((340 * 320))
 
-        for time_step in tqdm(range(sequence_length), file=sys.stdout):
 
-            if update:
-                state = self.res_states[time_step, :] # TODO: vectorize the case of reservoir update
-
+        if update:
             if self.random_projection == 'simulation':
-                state = act(np.dot(
-                    self.input_w, input_data[time_step, :]) + np.dot(
-                    self.res_w, state))
-            elif self.random_projection == 'out of core':
-                if self.weights_type == 'gaussian':
-                    state = act(np.dot(
-                        self.input_w, input_data[time_step, :]) + np.dot(
-                        self.res_w, state[time_step]))
-                elif self.weights_type == 'complex gaussian':
-                    state = act(np.dot(
-                        self.input_w_re, input_data[time_step, :]) + 1j * np.dot(
-                        self.input_w_im, input_data[time_step, :]) + np.dot(
-                        self.res_w_re, state) + 1j * np.dot(self.res_w_im, state))
-            if time_step >= self.forget:
-                self.res_states[time_step - self.forget, :] = state
+                print('Updating the reservoir')
+                self.forget = 0
+                for step in tqdm(range(self.steps_in_each_pred), file=sys.stdout):
+                    self.res_states = act(np.dot(
+                        self.input_w,
+                        input_data[:, step * self.encoded_spatial_points:(step + 1) * self.encoded_spatial_points].T) +
+                                          np.dot(self.res_w, self.res_states.T)).T
+        else:
+            print('Constructing the reservoir')
+            sequence_length, _ = input_data.shape
+            self.res_states = np.zeros((sequence_length - self.forget, self.n_res), dtype='cfloat')
+            # Resets the reservoir state, for new runs
+            state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
+            for time_step in tqdm(range(sequence_length), file=sys.stdout):
+                if self.random_projection == 'simulation':
+                    state = act(np.dot(self.input_w, input_data[time_step, :]) + np.dot(self.res_w, state))
+                elif self.random_projection == 'optical_setup':
+                    phase_vec[:self.n_res] = state
+                    phase_vec[self.n_res:self.n_res+self.encoded_spatial_points] = input_data[time_step, :]
+                    adict = {}
+                    adict['phase_vec'] = np.array(phase_vec.reshape(340,320), dtype='uint8') # since SLM is 8bit
+                    sio.savemat('phase_vec.mat', adict)
+                    self.eng.get_speckle(nargout=0)
+                    cam_data_matlab = self.eng.workspace['data']
+                    state = np.ravel(np.array(cam_data_matlab._data).reshape(
+                        cam_data_matlab.size[::-1]).T[cam_dim[0]:cam_dim[1], cam_dim[0]:cam_dim[1]])
+                elif self.random_projection == 'out of core':
+                    if self.weights_type == 'gaussian':
+                        state = act(np.dot(
+                            self.input_w, input_data[time_step, :]) + np.dot(
+                            self.res_w, state[time_step]))
+                    elif self.weights_type == 'complex gaussian':
+                        state = act(np.dot(
+                            self.input_w_re, input_data[time_step, :]) + 1j * np.dot(
+                            self.input_w_im, input_data[time_step, :]) + np.dot(
+                            self.res_w_re, state) + 1j * np.dot(self.res_w_im, state))
+                if time_step >= self.forget:
+                    self.res_states[time_step - self.forget, :] = state
 
     def train(self, concat_states, y):
         """ Performs a linear regression """
@@ -278,16 +311,17 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         n_sequence, sequence_length, spatial_points = input_data.shape
 
-        concat_states = np.zeros((n_sequence*(sequence_length-self.forget), self.encoded_spatial_points+self.n_res))
-        for n in range(n_sequence):
-            concat_states[n*(sequence_length-self.forget):(n+1)*(sequence_length-self.forget), :] = self.featurize(
-                input_data[n, :, :].reshape(sequence_length, spatial_points))
+        concat_states = self.featurize(input_data[0, :, :].reshape(sequence_length, spatial_points))
+        for n in range(n_sequence-1):
+            concat_states = np.concatenate((
+                concat_states,
+                self.featurize(input_data[n+1, :, :].reshape(sequence_length, spatial_points))))
 
-        y = y[:, self.forget:, :] ############## TODO: do rolling here
+        y = y[:, self.forget:, :].reshape(-1, y.shape[-1])
         if y.shape[-1] == 1:
             true_output = np.ravel(y)
         else:
-            true_output = y.reshape(-1, y.shape[-1])
+            true_output = y
 
         self.train(concat_states, true_output)
         pred_output = self.output(concat_states)
@@ -295,7 +329,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         train_end = time.time()
         self.train_timer = train_end - start
 
-        self.fit_score = self.score_metric(pred_output, true_output)
+        self.fit_score = self.score_metric(pred_output, y)
 
         if self.verbose:
             print('Training finished. Elapsed time:')
@@ -314,6 +348,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.verbose:
                 print('Results saved in memory.')
 
+        if self.random_projection == 'optical_setup':
+            self.eng.close_all(nargout=0)
+            self.eng = None
+
         return self
 
     def predict(self, input_data):
@@ -323,20 +361,22 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 then updates the reservoir by the prediction, predicts the next fixed number of timesteps and repeats.
         """
 
-        sequence_length, spatial_points = input_data.shape
-        spatial_points = spatial_points * self.each_pred_step
-
+        sequence_length, self.spatial_points = input_data.shape
+        spatial_points_in_each_pred = self.spatial_points * self.steps_in_each_pred
+        spatial_points_in_total_pred = self.spatial_points * self.steps_in_total_pred
 
         start = time.time()
         if self.verbose:
             print('Start of testing...')
 
         update = False
-        total_pred_output = np.zeros((sequence_length-self.forget, spatial_points * self.total_pred_steps))
-        for pred_step in range(self.total_pred_steps):
+        total_pred_output = np.zeros((sequence_length-self.forget, spatial_points_in_total_pred))
+        steps = int(self.steps_in_total_pred/self.steps_in_each_pred)
+        for pred_step in range(steps):
             concat_states = self.featurize(input_data, update=update)
             input_data = self.output(concat_states)
-            total_pred_output[:, pred_step*spatial_points:(pred_step+1)*spatial_points] = input_data
+            total_pred_output[
+            :, pred_step*spatial_points_in_each_pred:(pred_step+1)*spatial_points_in_each_pred] = input_data
             update = True
 
         test_end = time.time()
@@ -355,7 +395,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """
         input_data = input_data.reshape(-1, input_data.shape[-1])
         true_output = true_output.reshape(-1, true_output.shape[-1])
-        true_output = true_output[self.forget:, :]
         pred_output = self.predict(input_data)
         score = self.score_metric(pred_output, true_output)
         if self.verbose:
@@ -363,13 +402,23 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print(self.train_timer)
             print('Testing score:')
             print(score)
+
+        if self.random_projection == 'optical_setup':
+            self.eng.close_all(nargout=0)
+            self.eng = None
+
         return pred_output, score
 
     def featurize(self, input_data, update=False):
-
         start = time.time()
-
-        enc_input_data = self.encode(input_data)
+        if update:
+            enc_input_data = np.zeros((input_data.shape[0], self.steps_in_each_pred*self.encoded_spatial_points), dtype='cfloat')
+            for step in range(self.steps_in_each_pred):
+                enc_input_data[:, step*self.encoded_spatial_points:
+                                  (step+1)*self.encoded_spatial_points] = self.encode(
+                    input_data[:, step*self.spatial_points:(step+1)*self.spatial_points])
+        else:
+            enc_input_data = self.encode(input_data)
         encode_end = time.time()
         self.encode_timer = encode_end - start
         if self.verbose:
@@ -378,12 +427,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         self.iterate(enc_input_data, update=update) # calculates or updates self.res_states
         if np.iscomplex(enc_input_data).any():
-            concat_states = np.concatenate((np.real(self.res_states), np.imag(self.res_states),
-                                            np.real(enc_input_data[:, self.forget:, :]),
-                                            np.imag(enc_input_data[:, self.forget:, :])), axis=1)
+         # (-self.encoded_spatial_points) ensures that we only concatenate last predicted time serie
+            concat_states = np.concatenate((
+                np.real(self.res_states), np.imag(self.res_states),
+                np.real(enc_input_data[self.forget:, -self.encoded_spatial_points:]),
+                np.imag(enc_input_data[self.forget:, -self.encoded_spatial_points:])), axis=1)
         else:
-            concat_states = np.concatenate((self.res_states, enc_input_data[self.forget:, :]), axis=1)
-
+            concat_states = np.concatenate((self.res_states, enc_input_data[self.forget:, -self.encoded_spatial_points:]), axis=1)
         iterate_end = time.time()
         self.iterate_timer = iterate_end - start
         if self.verbose:
