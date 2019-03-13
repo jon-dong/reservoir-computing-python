@@ -54,13 +54,13 @@ import encode
 
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self,
-                 n_res=100, res_scale=1, res_encoding=None, res_enc_dim=1, res_enc_param=None,  # reservoir
+                 n_res=400, res_scale=1, res_encoding=None, res_enc_dim=1, res_enc_param=None,  # reservoir
                  input_scale=1, input_dim=1, input_encoding=None, input_enc_dim=1, input_enc_param=None,  # input
-                 random_projection='simulation', weights_type='complex gaussian',  # weights
+                 random_projection='simulation', weights_type='gaussian',  # weights
                  activation_fun='tanh', activation_param=None,  # dynamics
                  parallel_runs=None, forget=100,  # iterations
                  future_pred=False, pred_horizon=10, rec_pred_steps=0,  # prediction
-                 train_method='explicit', train_param=None,  # fit
+                 train_method='ridge', train_param=1e1,  # fit
                  random_state=None, is_complex=False, save=0, verbose=1):  # misc
         self.n_res = n_res
         self.res_scale = res_scale
@@ -369,7 +369,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 idx_sequence = np.arange(i_sequence * self.parallel_runs, (i_sequence + 1) * self.parallel_runs)
             else:
                 idx_sequence = i_sequence
-            for time_step in tqdm(range(sequence_length), file=sys.stdout):
+            if self.verbose:
+                time_iterable = tqdm(range(sequence_length), file=sys.stdout)
+            else:
+                time_iterable = range(sequence_length)
+            for time_step in time_iterable:
                 if self.random_projection == 'simulation':
                     self.state = self.encode_res(self.state)
                     self.state = act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
@@ -462,7 +466,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
         iterate_end = time.time()
-        iterate_timer = iterate_end - start
+        iterate_timer = iterate_end - encode_end
         if self.verbose:
             print('Iterations finished. Elapsed time:')
             print(iterate_timer)
@@ -470,13 +474,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
         n_sequence, sequence_length, input_dim = input_data.shape
         output = np.zeros((n_sequence, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
         reservoir_output = self.output(concat_states)
-        # Put all the next-time-step prediction in output
-        output[:, :sequence_length, :] = reservoir_output[:, :, :input_dim]
+        # Put all the next-time-step prediction in output (starting from 1 since 0 is not predicted)
+        output[:, 1:sequence_length, :] = reservoir_output[:, :-1, :input_dim]
+        output[:, 0, :] = input_data[:, 0, :]  # We put the original input_data for the first point
         # Use the last state to predict the future
         output[:, sequence_length:sequence_length+self.pred_horizon, :] = \
             np.reshape(reservoir_output[:, -1, :], (n_sequence, self.pred_horizon, input_dim))
-        # check pred_horizon +/-1, order of sizes
-        for i_rec_step in range(self.rec_pred_steps):
+        for i_rec_step in range(1, self.rec_pred_steps):
             next_input = reservoir_output[:, -1, :].reshape((n_sequence, self.pred_horizon, input_dim))
             enc_next_input = self.encode_input(next_input)
             next_concat_states = self.iterate(enc_next_input)
@@ -486,7 +490,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 np.reshape(reservoir_output[:, -1, :], (n_sequence, self.pred_horizon, input_dim))
 
         test_end = time.time()
-        test_timer = test_end - start
+        test_timer = test_end - iterate_end
         if self.verbose:
             print('Testing finished. Elapsed time:')
             print(test_timer)
