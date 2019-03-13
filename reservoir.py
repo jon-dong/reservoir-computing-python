@@ -139,19 +139,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         concat_states = self.iterate(enc_input_data)
         iterate_end = time.time()
-        self.iterate_timer = iterate_end - start
+        self.iterate_timer = iterate_end - init_end
         if self.verbose:
             print('Iterations finished. Elapsed time: ' + str(self.iterate_timer) + 's')
 
         true_output = y[:, self.forget:, :]
         self.output_w = self.train(concat_states, true_output)
-        train_end = time.time()
-        self.train_timer = train_end - start
 
         pred_output = self.output(concat_states)
         self.fit_score = self.score_metric(pred_output, true_output)
 
         if self.verbose:
+            train_end = time.time()
+            self.train_timer = train_end - iterate_end
             print('Training finished. Elapsed time: ' + str(self.train_timer) + 's')
             print('Training score: ' + str(self.fit_score))
         if self.save:
@@ -189,25 +189,28 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
         iterate_end = time.time()
-        iterate_timer = iterate_end - start
+        iterate_timer = iterate_end - init_end
         if self.verbose:
             print('Iterations finished. Elapsed time: ' + str(iterate_timer))
 
         pred_output = self.output(concat_states)
-        test_end = time.time()
-        test_timer = test_end - start
-        if self.verbose:
-            print('Testing finished. Elapsed time: ' + str(test_timer))
 
         # Compare with true output
         true_output = true_output[:, self.forget:, :]
         true_output = true_output.reshape(-1, true_output.shape[-1])
         pred_output = pred_output.reshape(-1, pred_output.shape[-1])
         score = self.score_metric(pred_output, true_output)
+
+        test_end = time.time()
+        test_timer = test_end - iterate_end
         if self.verbose:
-            print('Testing score:')
-            print(score)
-        return pred_output, score
+            print('Testing finished. Elapsed time: ' + str(test_timer))
+            print('Testing score: ' + str(score))
+        if self.future_pred is True:
+            score_vec = self.detailed_pred_score(pred_output, true_output)
+            return pred_output, score_vec
+        else:
+            return pred_output, score
 
     def initialize(self):
         """ Initializes the reservoir state, the input and reservoir weights """
@@ -492,3 +495,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
     @staticmethod
     def score_metric(pred_output, output):
         return 1 - np.sum(np.abs(pred_output-output)**2) / np.sum(np.abs(output-np.mean(output))**2)
+
+    def detailed_pred_score(self, pred_output, output):
+        if self.future_pred is False:
+            print('The "detailed_pred_score" function should only be called in prediction mode.')
+            return -1
+        step = int(pred_output.shape[-1] / self.pred_horizon)
+        score_vec = np.zeros((self.pred_horizon, ))
+
+        for i_horizon in range(self.pred_horizon):
+            score_vec[i_horizon] = 1 - np.sum(np.abs(pred_output[:, i_horizon*step:(i_horizon+1)*step] -
+                                                     output[:, i_horizon*step:(i_horizon+1)*step])**2) /\
+                                   np.sum(np.abs(output[:, i_horizon*step:(i_horizon+1)*step] -
+                                                 np.mean(output[:, i_horizon*step:(i_horizon+1)*step]))**2)
+
+        return score_vec
