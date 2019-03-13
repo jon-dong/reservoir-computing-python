@@ -143,16 +143,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Iterations finished. Elapsed time: ' + str(self.iterate_timer) + 's')
 
-        y_ = y[:, self.forget:, :]
-        self.output_w = self.train(concat_states, y_)
+        true_output = y[:, self.forget:, :]
+        self.output_w = self.train(concat_states, true_output)
         train_end = time.time()
         self.train_timer = train_end - start
 
         pred_output = self.output(concat_states)
-        if y_.shape[-1] == 1:
-            true_output = np.ravel(y_)
-        else:
-            true_output = y_.reshape(-1, y_.shape[-1])
         self.fit_score = self.score_metric(pred_output, true_output)
 
         if self.verbose:
@@ -181,15 +177,34 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     np.reshape(np.roll(input_data, -(i_step+1), axis=1), input_data.shape)
 
         # Use Reservoir to predict the output
-        pred_output = np.real_if_close(self.predict(input_data), tol=1e5)
+        start = time.time()
+        if self.verbose:
+            print('Start of testing...')
+        self.reset_state()
+        enc_input_data = self.encode_input(input_data)
+        init_end = time.time()
+        init_timer = init_end - start
+        if self.verbose:
+            print('Initialization finished. Elapsed time: ' + str(init_timer))
+
+        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
+        iterate_end = time.time()
+        iterate_timer = iterate_end - start
+        if self.verbose:
+            print('Iterations finished. Elapsed time: ' + str(iterate_timer))
+
+        pred_output = self.output(concat_states)
+        test_end = time.time()
+        test_timer = test_end - start
+        if self.verbose:
+            print('Testing finished. Elapsed time: ' + str(test_timer))
 
         # Compare with true output
         true_output = true_output[:, self.forget:, :]
         true_output = true_output.reshape(-1, true_output.shape[-1])
+        pred_output = pred_output.reshape(-1, pred_output.shape[-1])
         score = self.score_metric(pred_output, true_output)
         if self.verbose:
-            print('Testing finished. Elapsed time:')
-            print(self.train_timer)
             print('Testing score:')
             print(score)
         return pred_output, score
@@ -402,10 +417,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
     def train(self, concat_states, y):
         """ Performs a linear regression """
         concat_states = concat_states.reshape(-1, concat_states.shape[-1])
-        if y.shape[-1] == 1:
-            y = np.ravel(y)
-        else:
-            y = y.reshape(-1, y.shape[-1])
+        y = y.reshape(-1, y.shape[-1])
 
         if self.train_method == 'explicit':
             output_w, res, rnk, s = lstsq(concat_states, y)
@@ -431,31 +443,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         total_output = np.dot(concat_states, self.output_w)
         return total_output
 
-    def predict(self, input_data):
-        """ Iterates the reservoir with input, predicts using the output weights after training """
-        start = time.time()
-        if self.verbose:
-            print('Start of testing...')
-        self.reset_state()
-        enc_input_data = self.encode_input(input_data)
-        init_end = time.time()
-        init_timer = init_end - start
-        if self.verbose:
-            print('Initialization finished. Elapsed time: ' + str(init_timer))
-
-        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
-        iterate_end = time.time()
-        iterate_timer = iterate_end - start
-        if self.verbose:
-            print('Iterations finished. Elapsed time: ' + str(iterate_timer))
-
-        output = self.output(concat_states)
-        test_end = time.time()
-        test_timer = test_end - start
-        if self.verbose:
-            print('Testing finished. Elapsed time: ' + str(test_timer))
-        return output
-
     def recursive_predict(self, input_data):
         """ Feedback the prediction as input, to predict the future of the input time series """
         start = time.time()
@@ -463,6 +450,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Start of testing...')
         self.reset_state()
         enc_input_data = self.encode_input(input_data)
+        self.forget = 0
         encode_end = time.time()
         encode_timer = encode_end - start
         if self.verbose:
@@ -486,7 +474,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             np.reshape(reservoir_output[:, -1, :], (n_sequence, self.pred_horizon, input_dim))
         # check pred_horizon +/-1, order of sizes
         for i_rec_step in range(self.rec_pred_steps):
-            next_input = reservoir_output[:, -1, :]
+            next_input = reservoir_output[:, -1, :].reshape((n_sequence, self.pred_horizon, input_dim))
             enc_next_input = self.encode_input(next_input)
             next_concat_states = self.iterate(enc_next_input)
             reservoir_output = self.output(next_concat_states)
@@ -503,12 +491,4 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     @staticmethod
     def score_metric(pred_output, output):
-        if pred_output.shape[-1] == 1:
-            pred_output = np.ravel(pred_output)
-        else:
-            pred_output = pred_output.reshape(-1, pred_output.shape[-1])
-        if output.shape[-1] == 1:
-            output = np.ravel(output)
-        else:
-            output = output.reshape(-1, output.shape[-1])
         return 1 - np.sum(np.abs(pred_output-output)**2) / np.sum(np.abs(output-np.mean(output))**2)
