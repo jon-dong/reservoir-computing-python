@@ -408,7 +408,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             (np.real(self.state),
                              np.imag(self.state),
                              np.real(input_data[idx_sequence, time_step, :]).T,
-                             np.imag(input_data[idx_sequence, time_step, :]).T))
+                             np.imag(input_data[idx_sequence, time_step, :]).T)).T
                     else:
                         concat_states[idx_sequence, time_step - self.forget, :] = \
                             np.concatenate((self.state, input_data[idx_sequence, time_step, :].T)).T
@@ -495,6 +495,79 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Testing finished. Elapsed time:')
             print(test_timer)
         return output
+
+    def recursive_predict_score(self, input_data):
+        """ Feedback the prediction as input, to predict the future of the input time series """
+        start = time.time()
+        if self.verbose:
+            print('Start of testing...')
+        trunc_input_data = input_data[:, :-self.pred_horizon*self.rec_pred_steps, :]
+        self.reset_state()
+        enc_input_data = self.encode_input(trunc_input_data)
+        self.forget = 0
+        encode_end = time.time()
+        encode_timer = encode_end - start
+        if self.verbose:
+            print('Initialization finished. Elapsed time:')
+            print(encode_timer)
+
+        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
+        iterate_end = time.time()
+        iterate_timer = iterate_end - encode_end
+        if self.verbose:
+            print('Iterations finished. Elapsed time:')
+            print(iterate_timer)
+
+        n_sequence, sequence_length, input_dim = trunc_input_data.shape
+        if n_sequence != 1:
+            raise('The number of sequences should be equal to 1 in recursive prediction mode.')
+
+        # Change to parallel mode
+        n_parallel = 100
+        previous_parallel = self.parallel_runs
+        self.parallel_runs = n_parallel
+        # Also retrieve the previous states
+        if self.is_complex:
+            self.state = concat_states[0, -n_parallel, :2*self.n_res].T
+        else:
+            self.state = concat_states[0, -n_parallel:, :self.n_res].T
+
+        output = np.zeros((n_parallel, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
+        reservoir_output = self.output(concat_states)
+        # Put all the next-time-step prediction in output (starting from 1 since 0 is not predicted)
+        for i_parallel in range(n_parallel):
+            output[i_parallel, i_parallel+1:sequence_length, :] = reservoir_output[0, :-i_parallel-1, :input_dim]
+            output[i_parallel, :i_parallel+1, :] = input_data[:, :i_parallel+1, :]
+            output[i_parallel, sequence_length:sequence_length+self.pred_horizon, :] = \
+                np.reshape(reservoir_output[0, -i_parallel-1, :], (1, self.pred_horizon, input_dim))
+        for i_rec_step in range(1, self.rec_pred_steps):
+            next_input = output[:, sequence_length + i_rec_step*self.pred_horizon - 1, :].reshape(n_parallel, 1, -1)
+            enc_next_input = self.encode_input(next_input)
+            next_concat_states = self.iterate(enc_next_input)
+            reservoir_output = self.output(next_concat_states)
+            output[:, sequence_length+i_rec_step*self.pred_horizon:
+                   sequence_length+(i_rec_step+1)*self.pred_horizon, :] = \
+                np.reshape(reservoir_output[:, -1, :], (n_parallel, self.pred_horizon, input_dim))
+
+        test_end = time.time()
+        test_timer = test_end - iterate_end
+        if self.verbose:
+            print('Testing finished. Elapsed time:')
+            print(test_timer)
+
+        score_vec = np.zeros((self.pred_horizon * self.rec_pred_steps,))
+        error_vec = np.zeros((self.pred_horizon * self.rec_pred_steps,))
+        for i_parallel in range(n_parallel):
+            vec1 = output[i_parallel, sequence_length:, :]
+            vec2 = input_data[0, sequence_length-i_parallel:
+                                 sequence_length-i_parallel+self.pred_horizon*self.rec_pred_steps, :]
+            error_vec += np.squeeze(np.abs(vec1 - vec2) ** 2)
+        error_vec /= n_parallel
+        score_vec = 1 - error_vec / np.mean(np.abs(input_data - np.mean(input_data)) ** 2)
+        # TODO: test the normalization
+
+        self.parallel_runs = previous_parallel
+        return error_vec, output
 
     @staticmethod
     def score_metric(pred_output, output):
