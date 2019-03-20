@@ -131,7 +131,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             y = np.zeros(input_data.shape[0:-1] + (self.pred_horizon * input_dim,))
             for i_step in range(self.pred_horizon):
                 y[:, :, i_step*input_dim:(i_step+1)*input_dim] = \
-                    np.reshape(np.roll(input_data, -(i_step+1), axis=1), input_data.shape)
+                    np.roll(input_data, -(i_step+1), axis=1)
         init_end = time.time()
         self.init_timer = init_end - start
         if self.verbose:
@@ -174,7 +174,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             true_output = np.zeros(input_data.shape[0:-1] + (self.pred_horizon * input_dim,))
             for i_step in range(self.pred_horizon):
                 true_output[:, :, i_step*input_dim:(i_step+1)*input_dim] = \
-                    np.reshape(np.roll(input_data, -(i_step+1), axis=1), input_data.shape)
+                    np.roll(input_data, -(i_step+1), axis=1)
 
         # Use Reservoir to predict the output
         start = time.time()
@@ -457,7 +457,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Start of testing...')
         self.reset_state()
         enc_input_data = self.encode_input(input_data)
-        self.forget = 0
         encode_end = time.time()
         encode_timer = encode_end - start
         if self.verbose:
@@ -471,6 +470,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Iterations finished. Elapsed time:')
             print(iterate_timer)
 
+        # Recursive prediction: use the reservoir prediction as input
+        self.forget = 0
         n_sequence, sequence_length, input_dim = input_data.shape
         output = np.zeros((n_sequence, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
         reservoir_output = self.output(concat_states)
@@ -504,7 +505,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         trunc_input_data = input_data[:, :-self.pred_horizon*self.rec_pred_steps, :]
         self.reset_state()
         enc_input_data = self.encode_input(trunc_input_data)
-        self.forget = 0
         encode_end = time.time()
         encode_timer = encode_end - start
         if self.verbose:
@@ -532,6 +532,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         else:
             self.state = concat_states[0, -n_parallel:, :self.n_res].T
 
+        # Recursive prediction: use the reservoir prediction as input
+        self.forget = 0
         output = np.zeros((n_parallel, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
         reservoir_output = self.output(concat_states)
         # Put all the next-time-step prediction in output (starting from 1 since 0 is not predicted)
@@ -587,3 +589,20 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                                  np.mean(output[:, i_horizon*step:(i_horizon+1)*step]))**2)
 
         return score_vec
+
+    def generate_slm_img(self, input):
+        # We first fix the size of the reservoir
+        res_repeat = np.round(self.res_scale**2)
+        res_size = res_repeat * self.n_res
+
+        # We find how many times to repeat the input
+        n_sequence, input_dim = input.shape  # to be checked
+        input_repeat = np.round(self.n_res * self.input_scale**2 / input_dim)
+        input_size = input_repeat * input_dim
+
+        # We put everything in a new vector
+        total_size = res_size + input_size
+        slm_img = np.zeros((n_sequence, total_size))
+        slm_img[:, :res_size] = np.repeat(self.state, res_repeat, axis=1)
+        slm_img[:, res_size:] = np.repeat(input, input_repeat, axis=1)
+        
