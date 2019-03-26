@@ -4,7 +4,6 @@ Based on the Kuramoto-Sivashinsky differential equation
 """
 
 import numpy as np
-from sklearn.utils import check_random_state
 
 
 def kuramoto_sivashinsky(sequence_length=1000, n_sequence=1,  spatial_points=100):

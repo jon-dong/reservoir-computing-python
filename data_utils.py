@@ -76,32 +76,17 @@ def narma(sequence_length=1000, n_sequence=1, random_state=None):
     return np.tanh(input_data), np.tanh(y)
 
 
-def get_kuramoto_sivashinsky_lyap_exp(sequence_length=500, n_sequence = 10):
+def get_kuramoto_sivashinsky_lyap_exp(sequence_length=500, n_sequence = 500, spatial_points=20):
     '''
     Lyapunov exponent for the Kuramoto–Sivashinsky equation, u_t + u*u_x + α*u_xx + γ*u_xxxx = 0.
     The method is adapted and modified from "Physica D 65 (1993) 117-134" paper, also from
     https://blog.abhranil.net/2014/07/22/calculating-the-lyapunov-exponent-of-a-time-series-with-python-code/
     '''
-
-    # Parameters of the differential equation
-    beta = 0.2  # weight of the non-linear term with memory
-    gamma = 0.1  # exponential decay constant
-    tau = 17  # memory
-    n = 10  # power in the non-linear term
-    h = 1  # time step
-    memory_length = int(tau/h)
-
-    input_data = np.zeros((n_sequence, sequence_length, 1))  # last dimension is input_dim = 1
-    # Initialization of Mackey Glass
-    random_state = check_random_state(random_state)
-    input_data[:, :memory_length] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(n_sequence, memory_length, 1))
-    # Computation of next terms by finite differences
-    for iSequence in range(memory_length, sequence_length):
-        input_data[:, iSequence, 0] = (1 - h * gamma) * input_data[:, iSequence - 1, 0] + \
-        beta * h * input_data[:, iSequence - memory_length, 0] / \
-        (1 + input_data[:, iSequence - memory_length, 0] ** n)
-
-
+    from oct2py import octave
+    N = spatial_points
+    h = 0.25 # time step length
+    nstp = sequence_length
+    L = 22.
     dlist = [[] for i in range(sequence_length)]
     for i0 in range(n_sequence):
         a0 = np.random.rand(N-2,1)/2  # just some initial condition
@@ -124,17 +109,32 @@ def get_kuramoto_sivashinsky_lyap_exp(sequence_length=500, n_sequence = 10):
     return lyap_exp
 
 
-# def get_mackey_glass_lyap_exp(sequence_length=500, n_sequence = 500, spatial_points=20):
+# def get_mackey_glass_lyap_exp(sequence_length=500, n_sequence = 10):
 #     '''
 #     Lyapunov exponent for the Kuramoto–Sivashinsky equation, u_t + u*u_x + α*u_xx + γ*u_xxxx = 0.
 #     The method is adapted and modified from "Physica D 65 (1993) 117-134" paper, also from
 #     https://blog.abhranil.net/2014/07/22/calculating-the-lyapunov-exponent-of-a-time-series-with-python-code/
 #     '''
-#     from oct2py import octave
-#     N = spatial_points
-#     h = 0.25 # time step length
-#     nstp = sequence_length
-#     L = 22.
+#
+#     # Parameters of the differential equation
+#     beta = 0.2  # weight of the non-linear term with memory
+#     gamma = 0.1  # exponential decay constant
+#     tau = 17  # memory
+#     n = 10  # power in the non-linear term
+#     h = 1  # time step
+#     memory_length = int(tau/h)
+#
+#     input_data = np.zeros((n_sequence, sequence_length, 1))  # last dimension is input_dim = 1
+#     # Initialization of Mackey Glass
+#     random_state = check_random_state(random_state)
+#     input_data[:, :memory_length] = 1.1 + 0.2 * random_state.normal(loc=0., scale=1, size=(n_sequence, memory_length, 1))
+#     # Computation of next terms by finite differences
+#     for iSequence in range(memory_length, sequence_length):
+#         input_data[:, iSequence, 0] = (1 - h * gamma) * input_data[:, iSequence - 1, 0] + \
+#         beta * h * input_data[:, iSequence - memory_length, 0] / \
+#         (1 + input_data[:, iSequence - memory_length, 0] ** n)
+#
+#
 #     dlist = [[] for i in range(sequence_length)]
 #     for i0 in range(n_sequence):
 #         a0 = np.random.rand(N-2,1)/2  # just some initial condition
