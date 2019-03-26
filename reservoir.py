@@ -56,8 +56,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self,
                  n_res=400, res_scale=1, res_encoding=None, res_enc_dim=1, res_enc_param=None,  # reservoir
                  input_scale=1, input_dim=1, input_encoding=None, input_enc_dim=1, input_enc_param=None,  # input
+                 add_bias=True, bias_scale=1,  # bias
                  random_projection='simulation', weights_type='gaussian',  # weights
-                 activation_fun='tanh', activation_param=None, add_bias=True, bias_scale=1,  # dynamics
+                 activation_fun='tanh', activation_param=None, leak_rate=1,  # dynamics
                  parallel_runs=None, forget=100,  # iterations
                  future_pred=False, pred_horizon=10, rec_pred_steps=0,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
@@ -72,12 +73,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.input_encoding = input_encoding
         self.input_enc_dim = input_enc_dim
         self.input_enc_param = input_enc_param
+        self.add_bias = add_bias
+        self.bias_scale = bias_scale
         self.random_projection = random_projection
         self.weights_type = weights_type
         self.activation_fun = activation_fun
         self.activation_param = activation_param
-        self.add_bias = add_bias
-        self.bias_scale = bias_scale
+        self.leak_rate = leak_rate
         self.parallel_runs = parallel_runs
         self.forget = forget
         self.future_pred = future_pred
@@ -123,7 +125,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """
         start = time.time()
         if self.verbose:
-            print('Start of training...')
+            print('Reservoir Computing algorithm - Training phase:\n')
         self.initialize()
         self.reset_state()
         enc_input_data = self.encode_input(input_data)
@@ -137,13 +139,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
         init_end = time.time()
         self.init_timer = init_end - start
         if self.verbose:
-            print('Initialization finished. Elapsed time: ' + str(self.init_timer) + 's')
+            print('Initialization complete. \t\tElapsed time: ' + str(self.init_timer) + ' s')
 
         concat_states = self.iterate(enc_input_data)
         iterate_end = time.time()
         self.iterate_timer = iterate_end - init_end
         if self.verbose:
-            print('Iterations finished. Elapsed time: ' + str(self.iterate_timer) + 's')
+            print('Reservoir iterations complete. \t\tElapsed time: ' + str(self.iterate_timer) + ' s')
 
         true_output = y[:, self.forget:, :]
         self.output_w = self.train(concat_states, true_output)
@@ -154,7 +156,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             train_end = time.time()
             self.train_timer = train_end - iterate_end
-            print('Training finished. Elapsed time: ' + str(self.train_timer) + 's')
+            print('Training complete. \t\t\tElapsed time: ' + str(self.train_timer) + ' s')
             print('Training score: ' + str(self.fit_score))
         if self.save:
             with open('out/concat_states.out', 'w') as f:
@@ -181,19 +183,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # Use Reservoir to predict the output
         start = time.time()
         if self.verbose:
-            print('Start of testing...')
+            print('Reservoir Computing algorithm - Testing phase:\n')
         self.reset_state()
         enc_input_data = self.encode_input(input_data)
         init_end = time.time()
         init_timer = init_end - start
         if self.verbose:
-            print('Initialization finished. Elapsed time: ' + str(init_timer))
+            print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
         iterate_end = time.time()
         iterate_timer = iterate_end - init_end
         if self.verbose:
-            print('Iterations finished. Elapsed time: ' + str(iterate_timer))
+            print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
 
         pred_output = self.output(concat_states)
 
@@ -206,7 +208,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         test_end = time.time()
         test_timer = test_end - iterate_end
         if self.verbose:
-            print('Testing finished. Elapsed time: ' + str(test_timer))
+            print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
         return score
 
@@ -222,19 +224,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # Use Reservoir to predict the output
         start = time.time()
         if self.verbose:
-            print('Start of testing...')
+            print('Reservoir Computing algorithm - Testing phase:\n')
         self.reset_state()
         enc_input_data = self.encode_input(input_data)
         init_end = time.time()
         init_timer = init_end - start
         if self.verbose:
-            print('Initialization finished. Elapsed time: ' + str(init_timer))
+            print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
         concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
         iterate_end = time.time()
         iterate_timer = iterate_end - init_end
         if self.verbose:
-            print('Iterations finished. Elapsed time: ' + str(iterate_timer))
+            print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
 
         pred_output = self.output(concat_states)
 
@@ -247,7 +249,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         test_end = time.time()
         test_timer = test_end - iterate_end
         if self.verbose:
-            print('Testing finished. Elapsed time: ' + str(test_timer))
+            print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
         if self.future_pred is True:
             score_vec = self.detailed_pred_score(pred_output, true_output)
@@ -302,30 +304,31 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Initializes the reservoir state, the input and reservoir weights """
         self.random_state = check_random_state(self.random_state)
         total_input_dim = self.input_dim * self.input_enc_dim
+        total_res_dim = self.n_res * self.res_enc_dim
         if self.random_projection == 'simulation':
-            self.bias_vec = self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
+            self.bias_vec = self.add_bias*self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
             if self.weights_type == 'gaussian':
                 self.input_w = self.random_state.normal(loc=0., scale=self.input_scale / np.sqrt(total_input_dim),
                                                         size=(self.n_res, total_input_dim))
-                self.res_w = self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
-                                                      size=(self.n_res, self.n_res))
+                self.res_w = self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
+                                                      size=(self.n_res, total_res_dim))
             elif self.weights_type == 'complex gaussian':
                 self.input_w = 1j * self.random_state.normal(loc=0., scale=self.input_scale / np.sqrt(total_input_dim),
                                                              size=(self.n_res, total_input_dim))
                 self.input_w += self.random_state.normal(loc=0., scale=self.input_scale / np.sqrt(total_input_dim),
                                                          size=(self.n_res, total_input_dim))
-                self.res_w = 1j * self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
-                                                           size=(self.n_res, self.n_res))
-                self.res_w += self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
-                                                       size=(self.n_res, self.n_res))
+                self.res_w = 1j * self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
+                                                           size=(self.n_res, total_res_dim))
+                self.res_w += self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
+                                                       size=(self.n_res, total_res_dim))
         elif self.random_projection == 'out of core':
-            self.bias_vec = self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, ))
+            self.bias_vec = self.add_bias*self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
             n_batch = 2
             step = int(self.n_res / n_batch)
             if self.weights_type == 'gaussian':
                 self.input_w = np.memmap(
                     'data/input_w.dat', dtype='float32', mode='w+', shape=(self.n_res, total_input_dim))
-                self.res_w = np.memmap('data/res_w.dat', dtype='float32', mode='w+', shape=(self.n_res, self.n_res))
+                self.res_w = np.memmap('data/res_w.dat', dtype='float32', mode='w+', shape=(self.n_res, total_res_dim))
 
                 for i_batch in range(n_batch):
                     self.input_w[i_batch * step:(i_batch+1) * step] = \
@@ -333,17 +336,17 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                                  size=(step, total_input_dim))
                     for j_batch in range(n_batch):
                         self.res_w[i_batch * step:(i_batch+1) * step, j_batch * step:(j_batch+1) * step] = \
-                            self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
-                                                     size=(step, step))
+                            self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
+                                                     size=(step, step*self.res_enc_dim))
             elif self.weights_type == 'complex gaussian':
                 self.input_w_re = np.memmap('data/input_w_re.dat', dtype='float32', mode='w+',
                                             shape=(self.n_res, total_input_dim))
                 self.input_w_im = np.memmap('data/input_w_im.dat', dtype='float32', mode='w+',
                                             shape=(self.n_res, total_input_dim))
                 self.res_w_re = np.memmap('data/res_w_re.dat', dtype='float32', mode='w+',
-                                          shape=(self.n_res, self.n_res))
+                                          shape=(self.n_res, total_res_dim))
                 self.res_w_im = np.memmap('data/res_w_im.dat', dtype='float32', mode='w+',
-                                          shape=(self.n_res, self.n_res))
+                                          shape=(self.n_res, total_res_dim))
 
                 for i_batch in range(n_batch):
                     self.input_w_re[i_batch * step:(i_batch+1) * step] = \
@@ -354,11 +357,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                                  size=(step, total_input_dim))
                     for j_batch in range(n_batch):
                         self.res_w_re[i_batch * step:(i_batch+1) * step, j_batch * step:(j_batch+1) * step] = \
-                            self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
-                                                     size=(step, step))
+                            self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
+                                                     size=(step, step*self.res_enc_dim))
                         self.res_w_im[i_batch * step:(i_batch+1) * step, j_batch * step:(j_batch+1) * step] = \
-                            self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(self.n_res),
-                                                     size=(step, step))
+                            self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
+                                                     size=(step, step*self.res_enc_dim))
 
     def reset_state(self):
         """ Resets the reservoir state, for new runs """
@@ -388,6 +391,17 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.input_enc_param = [-0.5, 0.5, 0.5]
             return encode.local_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
                                        higher_bound=self.input_enc_param[1], step=self.input_enc_param[2])
+        elif self.input_encoding == 'fixed binary':
+            if self.input_enc_param is None:
+                self.input_enc_param = [0, 1]
+            return encode.fixed_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
+                                       higher_bound=self.input_enc_param[1])
+        elif self.input_encoding == 'large bin binary':
+            if self.input_enc_param is None:
+                self.input_enc_param = [-0.5, 0.5, 0.25, False]
+            return encode.large_bin_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
+                                           higher_bound=self.input_enc_param[1], gamma=self.input_enc_param[2],
+                                           balanced=self.input_enc_param[3])
         elif self.input_encoding is None:
             return mat
 
@@ -404,13 +418,24 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.res_encoding == 'naive binary':
             if self.res_enc_param is None:
                 self.res_enc_param = [-0.5, 0.5]
-            return encode.naive_binary(mat, binary_dim=self.res_enc_dim,
-                                       lower_bound=self.res_enc_param[0], higher_bound=self.res_enc_param[1])
+            return encode.naive_binary(mat.T, binary_dim=self.res_enc_dim,
+                                       lower_bound=self.res_enc_param[0], higher_bound=self.res_enc_param[1]).T
         elif self.res_encoding == 'local binary':
             if self.res_enc_param is None:
                 self.res_enc_param = [-0.5, 0.5, 0.5]
-            return encode.local_binary(mat, binary_dim=self.res_enc_dim, lower_bound=self.res_enc_param[0],
-                                       higher_bound=self.res_enc_param[1], step=self.res_enc_param[2])
+            return encode.local_binary(mat.T, binary_dim=self.res_enc_dim, lower_bound=self.res_enc_param[0],
+                                       higher_bound=self.res_enc_param[1], step=self.res_enc_param[2]).T
+        elif self.res_encoding == 'fixed binary':
+            if self.input_enc_param is None:
+                self.input_enc_param = [0, 1]
+            return encode.fixed_binary(mat.T, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
+                                       higher_bound=self.input_enc_param[1]).T
+        elif self.res_encoding == 'large bin binary':
+            if self.res_enc_param is None:
+                self.res_enc_param = [0, 1, 0.25, False]
+            return encode.large_bin_binary(mat.T, binary_dim=self.res_enc_dim, lower_bound=self.res_enc_param[0],
+                                           higher_bound=self.res_enc_param[1], gamma=self.res_enc_param[2],
+                                           balanced=self.res_enc_param[3]).T
         elif self.res_encoding is None:
             return mat
 
@@ -419,14 +444,29 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.activation_fun == 'tanh':
             return lambda x: np.tanh(x)
         elif self.activation_fun == 'phase':
-            return lambda x: np.exp(1j * np.abs(x) / np.amax(np.abs(x)) * 2 * np.pi)
-        elif self.activation_fun == 'phase_8bit':
+            return lambda x: np.exp(1j * x / np.amax(np.abs(x)) * self.activation_param)
+        elif self.activation_fun == 'abs phase':
+            return lambda x: np.exp(1j * np.abs(x) / np.amax(np.abs(x)) * self.activation_param)
+        elif self.activation_fun == 'fixed phase':
+            return lambda x: np.exp(1j * x * self.activation_param)
+        elif self.activation_fun == 'phase 8bit':
             def fun(x):
-                x = np.array(np.abs(x) / np.amax(np.abs(x))*255, dtype='int') / 255
-                return np.exp(1j*x*2*np.pi)
+                x = np.array(np.abs(x) / np.amax(np.abs(x)) * 255, dtype='int') / 255
+                return np.exp(1j * x * self.activation_param)
             return fun
-        elif self.activation_fun == 'binary':
+        elif self.activation_fun == 'binary threshold':
             return lambda x: np.abs(x) > np.median(np.abs(x))  # to activate the half of the neurons
+        elif self.activation_fun == 'abs':
+            return lambda x: np.abs(x)
+        elif self.activation_fun == 'intensity':
+            if self.activation_param is None:
+                self.activation_param = 1
+            def fun(x):
+                x = np.array(np.abs(x) ** 2)
+                return x * (x < self.activation_param) + self.activation_param * (x > self.activation_param)
+            return fun  # lambda x: np.abs(x) ** 2
+        else:  # in this last case, we allow external definition of the activation function
+            return self.activation_fun
 
     def iterate(self, input_data):
         """ Iterates the reservoir and return all the successive reservoir states """
@@ -435,7 +475,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         n_complex = 2 if self.is_complex else 1
         n_parallel = self.parallel_runs if self.parallel_runs is not None else 1
         concat_states = np.zeros((n_sequence, sequence_length-self.forget,
-                                  n_complex * (self.n_res+input_dim)))
+                                  n_complex * (self.n_res+input_dim)), dtype=np.float64)
         act = self.activation()
 
         # Initialize hardware if we use the optical setup
@@ -462,13 +502,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 time_iterable = range(sequence_length)
             for time_step in time_iterable:
                 if self.random_projection == 'simulation':
+                    previous_state = self.state
                     self.state = self.encode_res(self.state)
-                    if self.add_bias:
-                        self.state = act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
-                                        np.dot(self.res_w, self.state) + self.bias_vec)
-                    else:
-                        self.state = act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
-                                        np.dot(self.res_w, self.state))
+                    self.state = self.leak_rate * act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
+                                    np.dot(self.res_w, self.state) + self.bias_vec) + \
+                                 (1 - self.leak_rate) * previous_state
+                elif self.random_projection == 'hyperdimensional':
+                    # Remove the reservoir weights
+                    previous_state = self.state
+                    self.state = self.encode_res(self.state)
+                    self.state = self.leak_rate * act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
+                                    + self.bias_vec)+ \
+                                 (1 - self.leak_rate) * np.roll(previous_state, 1, axis=0);
                 elif self.random_projection == 'lighton opu':
                     self.state = self.encode_res(self.state)
                     self.state = self.random_mapping.fit_transform(np.concatenate(
@@ -510,6 +555,25 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # elif self.random_projection == 'meadowlark slm':
         #     self.eng.close_all(nargout=0)
         #     self.eng = None
+
+        if self.verbose >= 2:
+            res_states = concat_states[:, :, :n_complex*self.n_res]
+            min_res = np.amin(res_states)
+            max_res = np.amax(res_states)
+            mean_res = np.mean(res_states)
+            std_res = np.std(res_states)
+            print('Statistics of the reservoir states:')
+            print('Sample ' + str(res_states[-1, -1, :5]))
+            print('Mean value: ' + str(mean_res))
+            print('Standard deviation: ' + str(std_res))
+            print('Minimal value: ' + str(min_res))
+            print('Maximal value: ' + str(max_res))
+            if self.verbose >= 3:
+                import matplotlib.pyplot as plt
+                plt.hist(np.ravel(res_states[-1, -100::10, :self.n_res]), bins='auto')
+                plt.title('Distribution of reservoir activations')
+                plt.xlabel('Activation value')
+                plt.show()
         return concat_states
 
     def train(self, concat_states, y):
@@ -535,6 +599,24 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                                     tol=1e-5, alpha=self.train_param)
             clf.fit(concat_states, y)
             return clf.coef_.T
+        elif self.train_method == 'random regression':
+            def random_regression(X, y, order=0):
+                n, d = X.shape
+                stack = np.zeros((d, order + 1))
+                beta = np.zeros(d)
+
+                norm_factor = np.mean(np.sum(np.abs(X)**2, axis=1))
+                # code if X^T X is invertible
+                cov = X.T @ X / norm_factor
+                substraction = cov - np.eye(d)
+                product = X.T @ y / norm_factor
+                beta = X.T @ y / norm_factor
+                for i_order in range(order):
+                    product = substraction @ product
+                    beta += (-1) ** (i_order + 1) * product
+                return beta
+            concat_states = np.real_if_close(concat_states, tol=1e5)
+            return random_regression(concat_states, y, order=self.train_param)
 
     def output(self, concat_states):
         """ Computes the output given reservoir states and output weights """
@@ -547,6 +629,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Start of testing...')
         self.reset_state()
+        self.forget = 0
         enc_input_data = self.encode_input(input_data)
         encode_end = time.time()
         encode_timer = encode_end - start
@@ -562,7 +645,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print(iterate_timer)
 
         # Recursive prediction: use the reservoir prediction as input
-        self.forget = 0
         n_sequence, sequence_length, input_dim = input_data.shape
         output = np.zeros((n_sequence, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
         reservoir_output = self.output(concat_states)
@@ -595,6 +677,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Start of testing...')
         trunc_input_data = input_data[:, :-self.pred_horizon*self.rec_pred_steps, :]
         self.reset_state()
+        self.forget = 0
         enc_input_data = self.encode_input(trunc_input_data)
         encode_end = time.time()
         encode_timer = encode_end - start
@@ -624,7 +707,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             self.state = concat_states[0, -n_parallel:, :self.n_res].T
 
         # Recursive prediction: use the reservoir prediction as input
-        self.forget = 0
         output = np.zeros((n_parallel, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
         reservoir_output = self.output(concat_states)
         # Put all the next-time-step prediction in output (starting from 1 since 0 is not predicted)
