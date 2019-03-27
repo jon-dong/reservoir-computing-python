@@ -25,6 +25,4 @@ def kuramoto_sivashinsky(sequence_length=1000, n_sequence=1,  spatial_points=100
         a0 = np.random.rand(N-2,1)/4  # just some initial condition
         [tt[idx], fdata] = octave.feval('ksfmstp', a0, L, h, nstp, 1, nout=2)
         [xx[idx], input_data[idx,:,:]] = octave.feval('ksfm2real', fdata, L, nout=2)
-
-    # tanh function seems to help to the prediction accuracy
-    return np.tanh(input_data), xx, tt
+    return input_data, np.ravel(xx), np.linspace(np.min(tt), np.max(tt), sequence_length+1)
