@@ -12,11 +12,13 @@ def phase_encoding(mat, scaling_factor=np.pi, n_levels=255):
     mat = np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels
     return np.exp(1j * mat * scaling_factor)
 
+def slm_encoding(mat, scaling_factor=255, n_levels=255):
+    """ Transforms a real-valued vector into a vector encoded by n_levels from 0 to scaling_factor"""
+    return np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels * scaling_factor
 
 def binary_threshold(mat, threshold):
     """ A simple threshold function """
     return mat > threshold
-
 
 def naive_binary(mat, lower_bound=-0.5, higher_bound=0.5, binary_dim=10):
     """ We generate a binary vector using a series of equally-spaced thresholds """
@@ -28,7 +30,6 @@ def naive_binary(mat, lower_bound=-0.5, higher_bound=0.5, binary_dim=10):
     for i_binary in range(binary_dim):
         enc_input_data[..., i_binary::binary_dim] = mat > lower_bound + step * i_binary
     return enc_input_data
-
 
 def local_binary(mat, lower_bound=-0.5, higher_bound=0.5, step=0.5, binary_dim=10):
     if mat.ndim == 1:  # If the matrix is a vector

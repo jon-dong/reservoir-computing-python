@@ -62,6 +62,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  parallel_runs=None, forget=100,  # iterations
                  future_pred=False, pred_horizon=10, rec_pred_steps=0,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
+                 cam_size=None, cam_img_dim=None, slm_size=None, # SLM experiment
                  random_state=None, is_complex=False, save=0, verbose=1):  # misc
         self.n_res = n_res
         self.res_scale = res_scale
@@ -89,6 +90,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.is_complex = is_complex
         self.save = save
         self.verbose = verbose
+        self.cam_size = cam_size
+        self.cam_img_dim = cam_img_dim
+        self.slm_size = slm_size
 
         self.input_dim = None
         self.input_w = None
@@ -290,10 +294,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.input_enc_param is None:
                 self.input_enc_param = 25
             return encode.binary_threshold(mat, self.input_enc_param)
-        elif self.input_encoding == 'phase':
-            if self.input_enc_param is None:
-                self.input_enc_param = np.pi
-            return encode.phase_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
         elif self.input_encoding == 'naive binary':
             if self.input_enc_param is None:
                 self.input_enc_param = [-0.5, 0.5]
@@ -304,6 +304,14 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.input_enc_param = [-0.5, 0.5, 0.5]
             return encode.local_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
                                        higher_bound=self.input_enc_param[1], step=self.input_enc_param[2])
+        elif self.input_encoding == 'phase':
+            if self.input_enc_param is None:
+                self.input_enc_param = np.pi
+            return encode.phase_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
+        elif self.input_encoding == 'meadowlark slm':
+            if self.input_enc_param is None:
+                self.input_enc_param = 255
+            return encode.slm_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
         elif self.input_encoding is None:
             return mat
 
@@ -366,7 +374,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 if self.cam_size is None:
                     self.cam_size = (350, 350)
                 if self.cam_img_dim is None:
-                    self.cam_img_dim = np.round([self.cam_size[0]/2-np.sqrt(self.n_res)/2, self.cam_size[1]/2+np.sqrt(self.n_res)/2])
+                    self.cam_img_dim = np.array([self.cam_size[0]/2-np.sqrt(self.n_res)/2, self.cam_size[1]/2+np.sqrt(self.n_res)/2], dtype='uint8')
                 if self.slm_size is None:
                     self.slm_size = (512, 512)
             phase_vec = np.zeros(self.slm_size[0] * self.slm_size[1])
@@ -394,29 +402,28 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.state = self.random_mapping.fit_transform(np.concatenate(
                         (self.state, input_data[idx_sequence, time_step, :])))
                 elif self.random_projection == 'meadowlark slm':
-                    if self.parallel_runs is None:
-                        self.state = self.state.reshape((-1, 1))
-                    slm_imgs, vec_dim = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
-                    start_idx = np.round((phase_vec.shape[0] - vec_dim)/2)
-                    for i_img in range(n_parallel):
-                        phase_vec[start_idx:start_idx+vec_dim] = slm_imgs[i_img,:]
+                    slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
+                    if n_parallel==1:
                         adict = {}
-                        adict['phase_vec'] = np.array(phase_vec.reshape(self.slm_size), dtype='uint8') # since SLM is 8bit
+                        adict['phase_vec'] = np.array(slm_imgs[0,:], dtype='uint8') # since SLM is 8bit
                         sio.savemat('phase_vec.mat', adict)
                         self.eng.get_speckle(nargout=0)
                         cam_data_matlab = self.eng.workspace['data']
-                        self.state[i_img, :] = np.ravel(np.array(cam_data_matlab._data).reshape(
-                            cam_data_matlab.size[::-1]).T[:, self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
-                if time_step >= self.forget:
-                    if self.is_complex:
-                        concat_states[idx_sequence, time_step - self.forget, :] = np.concatenate(
-                            (np.real(self.state),
-                             np.imag(self.state),
-                             np.real(input_data[idx_sequence, time_step, :]).T,
-                             np.imag(input_data[idx_sequence, time_step, :]).T)).T
+                        self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2] = np.ravel(np.array(cam_data_matlab._data).reshape(
+                            cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
                     else:
-                        concat_states[idx_sequence, time_step - self.forget, :] = \
-                            np.concatenate((self.state, input_data[idx_sequence, time_step, :].T)).T
+                        for i_img in range(n_parallel):
+                            phase_vec[start_idx:start_idx+vec_dim] = slm_imgs[i_img,:]
+                            adict = {}
+                            adict['phase_vec'] = np.array(phase_vec.reshape(self.slm_size), dtype='uint8') # since SLM is 8bit
+                            sio.savemat('phase_vec.mat', adict)
+                            self.eng.get_speckle(nargout=0)
+                            cam_data_matlab = self.eng.workspace['data']
+                            self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2, i_img] = np.ravel(np.array(cam_data_matlab._data).reshape(
+                                cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
+                if time_step >= self.forget:
+                    concat_states[idx_sequence, time_step - self.forget, :] = \
+                    np.concatenate((self.state, input_data[idx_sequence, time_step, :].T)).T
 
         # Release hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
@@ -595,21 +602,25 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return score_vec
 
-    def generate_slm_imgs(self, input, reservoir):
+    def generate_slm_imgs(self, input_data, reservoir):
+        if len(input_data.shape)==1:
+            input_data = input_data.reshape((1,-1))
+        if len(reservoir.shape)==1:
+            reservoir = reservoir.reshape((-1,1))
         # We first fix the size of the reservoir
         res_repeat = np.round(self.res_scale**2)
         res_size = res_repeat * self.n_res
 
         # We find how many times to repeat the input
-        n_sequence, input_dim = input.shape
+        n_sequence, input_dim = input_data.shape
         input_repeat = np.round(self.n_res * self.input_scale**2 / input_dim)
         input_size = input_repeat * input_dim
 
         # We put everything in a new vector
-        total_size = res_size + input_size
+        total_size = np.int(res_size + input_size)
         slm_imgs = np.zeros((n_sequence, total_size))
         slm_imgs[:, :res_size] = np.repeat(reservoir.T, res_repeat, axis=1)
-        slm_imgs[:, res_size:] = np.repeat(input, input_repeat, axis=1)
+        slm_imgs[:, res_size:] = np.repeat(input_data, input_repeat, axis=1)
 
-        return slm_imgs, total_size
+        return slm_imgs
         
