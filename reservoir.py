@@ -64,7 +64,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  future_pred=False, pred_horizon=10, rec_pred_steps=0,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
                  cam_size=None, cam_img_dim=None, slm_size=None, # SLM experiment
-                 random_state=None, is_complex=False, save=0, verbose=1):  # misc
+                 random_state=None, save=0, verbose=1):  # misc
         self.n_res = n_res
         self.res_scale = res_scale
         self.res_encoding = res_encoding
@@ -89,7 +89,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.train_method = train_method
         self.train_param = train_param
         self.random_state = random_state
-        self.is_complex = is_complex
         self.save = save
         self.verbose = verbose
         self.cam_size = cam_size
@@ -396,10 +395,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir and return all the successive reservoir states """
         n_sequence, sequence_length, input_dim = input_data.shape
 
-        n_complex = 2 if self.is_complex else 1
         n_parallel = self.parallel_runs if self.parallel_runs is not None else 1
         concat_states = np.zeros((n_sequence, sequence_length-self.forget,
-                                  n_complex * (self.n_res+input_dim)), dtype=np.float64)
+                                  self.n_res+input_dim), dtype=np.float64)
         act = self.activation()
 
         # Initialize hardware if we use the optical setup
@@ -466,11 +464,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2, i_img] = np.ravel(np.array(cam_data_matlab._data).reshape(
                                 cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
                 if time_step >= self.forget:
-                    state = np.angle(self.state, deg=False) \
-                        if self.activation_fun=='phase' or self.activation_fun=='phase_8bit' else self.state
+                    state = np.angle(self.state, deg=False) if any(np.iscomplex(self.state)) else self.state
                     inputdata = np.angle(input_data[idx_sequence, time_step, :], deg=False) \
-                        if self.input_encoding=='phase' else input_data[idx_sequence, time_step, :]
+                        if any(np.iscomplex(input_data[idx_sequence, :, :].flatten())) else input_data[idx_sequence, time_step, :]
                     concat_states[idx_sequence, time_step - self.forget, :] = np.concatenate((state, inputdata.T)).T
+                    self.concat = input_data
 
         # Release hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
@@ -624,10 +622,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         previous_parallel = self.parallel_runs
         self.parallel_runs = n_parallel
         # Also retrieve the previous states
-        if self.is_complex:
-            self.state = concat_states[0, -n_parallel:, :2*self.n_res].T
-        else:
-            self.state = concat_states[0, -n_parallel:, :self.n_res].T
+        self.state = concat_states[0, -n_parallel:, :self.n_res].T
 
         # Recursive prediction: use the reservoir prediction as input
         output = np.zeros((n_parallel, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
