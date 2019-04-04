@@ -16,7 +16,7 @@ import numpy as np
 from sklearn.utils import check_random_state
 
 
-def mackey_glass(sequence_length=1000, n_sequence=1, tau=17, random_state=None):
+def mackey_glass(sequence_length=1000, n_sequence=1, random_state=None):
     '''
     Generates Mackey-Glass time series, using discretization of the
     MG differential equation

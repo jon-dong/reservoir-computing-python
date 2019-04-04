@@ -7,19 +7,18 @@ These functions are generic and can be used outside the Reservoir Computing fram
 import numpy as np
 
 
-def phase_encoding(mat, scaling_factor=np.pi, n_levels=None):
-    """ Transforms a real-valued vector into a phase-only vector """
-    mat = mat * scaling_factor
-    if n_levels:
-        step = 2 * np.pi / n_levels
-        mat = np.round(mat / step) * step
-    return np.exp(1j * mat)
+def phase_encoding(mat, scaling_factor=np.pi, n_levels=255):
+    """ Transforms a real-valued vector into a phase-only vector encoded by n_levels from 0 to scaling_factor"""
+    mat = np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels
+    return np.exp(1j * mat * scaling_factor)
 
+def slm_encoding(mat, scaling_factor=255, n_levels=255):
+    """ Transforms a real-valued vector into a vector encoded by n_levels from 0 to scaling_factor"""
+    return np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels * scaling_factor
 
 def binary_threshold(mat, threshold):
     """ A simple threshold function """
     return mat > threshold
-
 
 def naive_binary(mat, lower_bound=-0.5, higher_bound=0.5, binary_dim=10):
     """ We generate a binary vector using a series of equally-spaced thresholds """
