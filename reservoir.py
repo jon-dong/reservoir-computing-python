@@ -377,7 +377,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.cam_img_dim = np.array([self.cam_size[0]/2-np.sqrt(self.n_res)/2, self.cam_size[1]/2+np.sqrt(self.n_res)/2], dtype='uint8')
                 if self.slm_size is None:
                     self.slm_size = (512, 512)
-            phase_vec = np.zeros(self.slm_size[0] * self.slm_size[1])
 
         for i_sequence in range(int(n_sequence / n_parallel)):
             if self.parallel_runs is not None:
@@ -413,17 +412,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
                     else:
                         for i_img in range(n_parallel):
-                            phase_vec[start_idx:start_idx+vec_dim] = slm_imgs[i_img,:]
                             adict = {}
-                            adict['phase_vec'] = np.array(phase_vec.reshape(self.slm_size), dtype='uint8') # since SLM is 8bit
+                            adict['phase_vec'] = np.array(slm_imgs[i_img,:], dtype='uint8') # since SLM is 8bit
                             sio.savemat('phase_vec.mat', adict)
                             self.eng.get_speckle(nargout=0)
                             cam_data_matlab = self.eng.workspace['data']
                             self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2, i_img] = np.ravel(np.array(cam_data_matlab._data).reshape(
                                 cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
                 if time_step >= self.forget:
-                    concat_states[idx_sequence, time_step - self.forget, :] = \
-                    np.concatenate((self.state, input_data[idx_sequence, time_step, :].T)).T
+                    state = np.angle(self.state, deg=False) \
+                        if self.activation_fun=='phase' or self.activation_fun=='phase_8bit' else self.state
+                    inputdata = np.angle(input_data[idx_sequence, time_step, :], deg=False) \
+                        if self.input_encoding=='phase' else input_data[idx_sequence, time_step, :]
+                    concat_states[idx_sequence, time_step - self.forget, :] = np.concatenate((state, inputdata.T)).T
 
         # Release hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
