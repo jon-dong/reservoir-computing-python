@@ -312,7 +312,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return encode.phase_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
         elif self.input_encoding == 'meadowlark slm':
             if self.input_enc_param is None:
-                self.input_enc_param = 255
+                self.input_enc_param = 255/2
             return encode.slm_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
         elif self.input_encoding == 'fixed binary':
             if self.input_enc_param is None:
@@ -395,6 +395,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir and return all the successive reservoir states """
         n_sequence, sequence_length, input_dim = input_data.shape
 
+        input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
+        state_iscomplex = True if any(np.iscomplex(self.state)) else False
         n_parallel = self.parallel_runs if self.parallel_runs is not None else 1
         concat_states = np.zeros((n_sequence, sequence_length-self.forget,
                                   self.n_res+input_dim), dtype=np.float64)
@@ -464,18 +466,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2, i_img] = np.ravel(np.array(cam_data_matlab._data).reshape(
                                 cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
                 if time_step >= self.forget:
-                    state = np.angle(self.state, deg=False) if any(np.iscomplex(self.state)) else self.state
+                    state = np.angle(self.state, deg=False) if state_iscomplex else self.state
                     inputdata = np.angle(input_data[idx_sequence, time_step, :], deg=False) \
-                        if any(np.iscomplex(input_data[idx_sequence, :, :].flatten())) else input_data[idx_sequence, time_step, :]
+                        if input_iscomplex else input_data[idx_sequence, time_step, :]
                     concat_states[idx_sequence, time_step - self.forget, :] = np.concatenate((state, inputdata.T)).T
                     self.concat = input_data
 
         # Release hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
             self.opu.close()
-        # elif self.random_projection == 'meadowlark slm':
-        #     self.eng.close_all(nargout=0)
-        #     self.eng = None
+        elif self.random_projection == 'meadowlark slm':
+            self.eng.close_all(nargout=0)
+            self.eng = None
 
         if self.verbose >= 2:
             res_states = concat_states[:, :, :n_complex*self.n_res]
@@ -681,11 +683,17 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return score_vec
 
+
+
     def generate_slm_imgs(self, input_data, reservoir):
+
+        slm_size = [512, 512]  # out of 512x512, to be defined properly later
         if len(input_data.shape)==1:
             input_data = input_data.reshape((1,-1))
+
         if len(reservoir.shape)==1:
             reservoir = reservoir.reshape((-1,1))
+
         # We first fix the size of the reservoir
         res_repeat = np.round(self.res_scale**2)
         res_size = res_repeat * self.n_res
@@ -693,13 +701,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # We find how many times to repeat the input
         n_sequence, input_dim = input_data.shape
         input_repeat = np.round(self.n_res * self.input_scale**2 / input_dim)
-        input_size = input_repeat * input_dim
+        input_size = int(input_repeat * input_dim)
 
-        # We put everything in a new vector
+        # We find the bias
+        bias_repeat = np.round(self.n_res * self.bias_scale**2)
+        bias_size = bias_repeat
+
+        # We put everything in a new vector except the bias since the matlab will automatically add it before to send it to SLM
         total_size = np.int(res_size + input_size)
-        slm_imgs = np.zeros((n_sequence, total_size))
-        slm_imgs[:, :res_size] = np.repeat(reservoir.T, res_repeat, axis=1)
-        slm_imgs[:, res_size:] = np.repeat(input_data, input_repeat, axis=1)
-
+        factor = int(slm_size[0] * slm_size[1] / (total_size+bias_size))
+        slm_imgs = np.zeros((n_sequence, total_size*factor))
+        slm_imgs[:, :res_size*factor] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
+        slm_imgs[:, res_size*factor:res_size*factor+input_size*factor] = np.repeat(input_data, input_repeat * factor, axis=1)
+        
         return slm_imgs
         
