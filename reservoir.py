@@ -63,7 +63,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  parallel_runs=None, forget=100,  # iterations
                  future_pred=False, pred_horizon=10, rec_pred_steps=0,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
-                 cam_size=None, cam_img_dim=None, slm_size=None, # SLM experiment
+                 cam_roi=None, cam_img_dim=None, slm_size=None, # SLM experiment
                  random_state=None, save=0, verbose=1):  # misc
         self.n_res = n_res
         self.res_scale = res_scale
@@ -91,7 +91,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.random_state = random_state
         self.save = save
         self.verbose = verbose
-        self.cam_size = cam_size
+        self.cam_roi = cam_roi
         self.cam_img_dim = cam_img_dim
         self.slm_size = slm_size
 
@@ -410,14 +410,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.eng is None:
                 import matlab.engine
                 self.eng = matlab.engine.start_matlab()
+                if self.cam_roi is None:
+                    self.cam_roi = [350, 350]
+                    self.eng.workspace['cam_roi'] = matlab.double(self.cam_roi)
+                if self.cam_img_dim is None:
+                    self.cam_img_dim = np.array(
+                        [self.cam_roi[0]/2-np.sqrt(self.n_res)/2, self.cam_roi[1]/2+np.sqrt(self.n_res)/2], dtype='uint8')
+                    self.eng.workspace['cam_img_dim'] = matlab.double(self.cam_img_dim.tolist())
+                if self.slm_size is None:
+                    self.slm_size = [512, 512]
+                    self.eng.workspace['slm_size'] = matlab.double(self.slm_size)
                 self.eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
                 self.eng.open_all(nargout=0)
-                if self.cam_size is None:
-                    self.cam_size = (350, 350)
-                if self.cam_img_dim is None:
-                    self.cam_img_dim = np.array([self.cam_size[0]/2-np.sqrt(self.n_res)/2, self.cam_size[1]/2+np.sqrt(self.n_res)/2], dtype='uint8')
-                if self.slm_size is None:
-                    self.slm_size = (512, 512)
 
         for i_sequence in range(int(n_sequence / n_parallel)):
             if self.parallel_runs is not None:
@@ -464,7 +468,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             self.eng.get_speckle(nargout=0)
                             cam_data_matlab = self.eng.workspace['data']
                             self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2, i_img] = np.ravel(np.array(cam_data_matlab._data).reshape(
-                                cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
+                                cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1]:jump, self.cam_img_dim[0]:self.cam_img_dim[1]])
                 if time_step >= self.forget:
                     state = np.angle(self.state, deg=False) if state_iscomplex else self.state
                     inputdata = np.angle(input_data[idx_sequence, time_step, :], deg=False) \
@@ -475,9 +479,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # Release hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
             self.opu.close()
-        elif self.random_projection == 'meadowlark slm':
-            self.eng.close_all(nargout=0)
-            self.eng = None
+#         elif self.random_projection == 'meadowlark slm':
+#             self.eng.close_all(nargout=0)
+#             self.eng = None
 
         if self.verbose >= 2:
             res_states = concat_states[:, :, :n_complex*self.n_res]
@@ -687,7 +691,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def generate_slm_imgs(self, input_data, reservoir):
 
-        slm_size = [512, 512]  # out of 512x512, to be defined properly later
         if len(input_data.shape)==1:
             input_data = input_data.reshape((1,-1))
 
@@ -709,7 +712,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         # We put everything in a new vector except the bias since the matlab will automatically add it before to send it to SLM
         total_size = np.int(res_size + input_size)
-        factor = int(slm_size[0] * slm_size[1] / (total_size+bias_size))
+        factor = int(self.slm_size[0] * self.slm_size[1] / (total_size+bias_size))
         slm_imgs = np.zeros((n_sequence, total_size*factor))
         slm_imgs[:, :res_size*factor] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
         slm_imgs[:, res_size*factor:res_size*factor+input_size*factor] = np.repeat(input_data, input_repeat * factor, axis=1)
