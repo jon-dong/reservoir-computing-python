@@ -173,7 +173,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return self
 
 
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None):
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False):
         # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
             true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
@@ -218,6 +218,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return score
         else:
             return pred_output, score
+
+
+    def score(self, input_data, true_output=None, sample_weight=None):
+
+        return self.predict_and_score(input_data, true_output, only_score=True)
+
 
     def initialize(self):
         """ Initializes the reservoir state, the input and reservoir weights """
@@ -396,7 +402,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         n_sequence, sequence_length, input_dim = input_data.shape
 
         input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
-        state_iscomplex = True if any(np.iscomplex(self.state)) else False
+        state_iscomplex = True if self.activation_fun == 'phase' or self.activation_fun == 'phase 8bit' else False
         n_parallel = self.parallel_runs if self.parallel_runs is not None else 1
         concat_states = np.zeros((n_sequence, sequence_length-self.forget,
                                   self.n_res+input_dim), dtype=np.float64)
