@@ -12,7 +12,7 @@ def phase_encoding(mat, scaling_factor=np.pi, n_levels=255):
     mat = np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels
     return np.exp(1j * mat * scaling_factor)
 
-def slm_encoding(mat, scaling_factor=255, n_levels=255):
+def slm_encoding(mat, scaling_factor=int(256/2), n_levels=int(256/2)):
     """ Transforms a real-valued vector into a vector encoded by n_levels from 0 to scaling_factor"""
     return np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels * scaling_factor
 

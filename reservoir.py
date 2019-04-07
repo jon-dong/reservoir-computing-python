@@ -51,6 +51,7 @@ from tqdm import tqdm
 import sys
 import encode
 import data_utils
+import scipy.io as sio
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
@@ -61,9 +62,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  random_projection='simulation', weights_type='gaussian',  # weights
                  activation_fun='tanh', activation_param=None, leak_rate=1,  # dynamics
                  parallel_runs=None, forget=100,  # iterations
-                 future_pred=False, pred_horizon=10, rec_pred_steps=0,  # prediction
+                 future_pred=True, pred_horizon=10, rec_pred_steps=0,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
-                 cam_roi=None, cam_img_dim=None, slm_size=None, # SLM experiment
+                 cam_roi=None, cam_sampling_range=None, slm_size=None, matlab_eng=None, # SLM experiment
                  random_state=None, save=0, verbose=1):  # misc
         self.n_res = n_res
         self.res_scale = res_scale
@@ -92,7 +93,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.save = save
         self.verbose = verbose
         self.cam_roi = cam_roi
-        self.cam_img_dim = cam_img_dim
         self.slm_size = slm_size
 
         self.input_dim = None
@@ -115,7 +115,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
             # Use "disable_pbar=True" if needed
             self.parallel_runs = 100
         elif self.random_projection == 'meadowlark slm':
-            self.eng = None
+            self.cam_sampling_range = None
+            self.matlab_eng = matlab_eng
+            self.cam_sampling_range = cam_sampling_range
         elif self.random_projection == 'out of core' and self.weights_type == 'complex gaussian':
             self.input_w_re = None
             self.input_w_im = None
@@ -318,8 +320,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return encode.phase_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
         elif self.input_encoding == 'meadowlark slm':
             if self.input_enc_param is None:
-                self.input_enc_param = 255/2
-            return encode.slm_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
+                self.input_enc_param = int(256/2)
+            return encode.slm_encoding(mat, scaling_factor=self.input_enc_param, n_levels=int(256/2))
         elif self.input_encoding == 'fixed binary':
             if self.input_enc_param is None:
                 self.input_enc_param = [0, 1]
@@ -344,6 +346,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.res_enc_param is None:
                 self.res_enc_param = np.pi
             return encode.phase_encoding(mat, scaling_factor=self.res_enc_param)
+        elif self.res_encoding == 'meadowlark slm':
+            if self.res_enc_param is None:
+                self.res_enc_param = int(256/2)
+            return encode.slm_encoding(mat, scaling_factor=self.res_enc_param, n_levels=int(256/2))
         elif self.res_encoding == 'naive binary':
             if self.res_enc_param is None:
                 self.res_enc_param = [-0.5, 0.5]
@@ -412,22 +418,20 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.random_projection == 'lighton opu':
             self.opu.open()
         elif self.random_projection == 'meadowlark slm':
-            import scipy.io as sio
-            if self.eng is None:
+            if self.matlab_eng is None:
                 import matlab.engine
-                self.eng = matlab.engine.start_matlab()
+                self.matlab_eng = matlab.engine.start_matlab()
                 if self.cam_roi is None:
                     self.cam_roi = [350, 350]
-                    self.eng.workspace['cam_roi'] = matlab.double(self.cam_roi)
-                if self.cam_img_dim is None:
-                    self.cam_img_dim = np.array(
-                        [self.cam_roi[0]/2-np.sqrt(self.n_res)/2, self.cam_roi[1]/2+np.sqrt(self.n_res)/2], dtype='uint8')
-                    self.eng.workspace['cam_img_dim'] = matlab.double(self.cam_img_dim.tolist())
+                self.matlab_eng.workspace['cam_roi'] = matlab.double(self.cam_roi)
                 if self.slm_size is None:
                     self.slm_size = [512, 512]
-                    self.eng.workspace['slm_size'] = matlab.double(self.slm_size)
-                self.eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
-                self.eng.open_all(nargout=0)
+                self.matlab_eng.workspace['slm_size'] = matlab.double(self.slm_size)
+                self.cam_sampling_range = np.linspace(0, (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1, self.n_res, dtype='uint32')
+                self.matlab_eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
+                self.matlab_eng.open_slm(nargout=0)
+                self.matlab_eng.open_maitai(nargout=0)
+                self.matlab_eng.open_camera(nargout=0)
 
         for i_sequence in range(int(n_sequence / n_parallel)):
             if self.parallel_runs is not None:
@@ -457,24 +461,27 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.state = self.random_mapping.fit_transform(np.concatenate(
                         (self.state, input_data[idx_sequence, time_step, :])))
                 elif self.random_projection == 'meadowlark slm':
+                    self.state = self.encode_res(self.state)
                     slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
                     if n_parallel==1:
                         adict = {}
                         adict['phase_vec'] = np.array(slm_imgs[0,:], dtype='uint8') # since SLM is 8bit
                         sio.savemat('phase_vec.mat', adict)
-                        self.eng.get_speckle(nargout=0)
-                        cam_data_matlab = self.eng.workspace['data']
-                        self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2] = np.ravel(np.array(cam_data_matlab._data).reshape(
-                            cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1], self.cam_img_dim[0]:self.cam_img_dim[1]])
+                        self.matlab_eng.get_speckle(nargout=0)
+                        cam_data_matlab = self.matlab_eng.workspace['data']
+                        self.state = (1-self.leak_rate)*np.ravel(np.array(cam_data_matlab._data).reshape(
+                            cam_data_matlab.size[::-1]).T)[self.cam_sampling_range] + self.leak_rate*self.state
                     else:
                         for i_img in range(n_parallel):
-                            adict = {}
-                            adict['phase_vec'] = np.array(slm_imgs[i_img,:], dtype='uint8') # since SLM is 8bit
-                            sio.savemat('phase_vec.mat', adict)
-                            self.eng.get_speckle(nargout=0)
-                            cam_data_matlab = self.eng.workspace['data']
-                            self.state[:(self.cam_img_dim[1]-self.cam_img_dim[0])**2, i_img] = np.ravel(np.array(cam_data_matlab._data).reshape(
-                                cam_data_matlab.size[::-1]).T[self.cam_img_dim[0]:self.cam_img_dim[1]:jump, self.cam_img_dim[0]:self.cam_img_dim[1]])
+                            raise ValueError("n_parallel is greater than one")
+                            
+#                             adict = {}
+#                             adict['phase_vec'] = np.array(slm_imgs[i_img,:], dtype='uint8') # since SLM is 8bit
+#                             sio.savemat('phase_vec.mat', adict)
+#                             self.matlab_eng.get_speckle(nargout=0)
+#                             cam_data_matlab = self.matlab_eng.workspace['data']
+#                             self.state = np.ravel(np.array(cam_data_matlab._data).reshape(
+#                                 cam_data_matlab.size[::-1]).T)[self.cam_sampling_range]
                 if time_step >= self.forget:
                     state = np.angle(self.state, deg=False) if state_iscomplex else self.state
                     inputdata = np.angle(input_data[idx_sequence, time_step, :], deg=False) \
@@ -486,8 +493,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.random_projection == 'lighton opu':
             self.opu.close()
 #         elif self.random_projection == 'meadowlark slm':
-#             self.eng.close_all(nargout=0)
-#             self.eng = None
+#             self.matlab_eng.close_all(nargout=0)
+#             self.matlab_eng = None
 
         if self.verbose >= 2:
             res_states = concat_states[:, :, :n_complex*self.n_res]
@@ -719,9 +726,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # We put everything in a new vector except the bias since the matlab will automatically add it before to send it to SLM
         total_size = np.int(res_size + input_size)
         factor = int(self.slm_size[0] * self.slm_size[1] / (total_size+bias_size))
-        slm_imgs = np.zeros((n_sequence, total_size*factor))
-        slm_imgs[:, :res_size*factor] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
-        slm_imgs[:, res_size*factor:res_size*factor+input_size*factor] = np.repeat(input_data, input_repeat * factor, axis=1)
-        
-        return slm_imgs
+        if not factor:
+            raise ValueError(["SLM used pixels are not sufficient. Required at least ", str(total_size+bias_size)])
+        else:
+            slm_imgs = np.zeros((n_sequence, total_size*factor))
+            slm_imgs[:, :res_size*factor] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
+            slm_imgs[:, res_size*factor:res_size*factor+input_size*factor] = np.repeat(input_data, input_repeat * factor, axis=1)
+            return slm_imgs
+            
         
