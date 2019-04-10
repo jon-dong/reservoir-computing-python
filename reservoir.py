@@ -726,6 +726,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # We put everything in a new vector except the bias since the matlab will automatically add it before to send it to SLM
         total_size = np.int(res_size + input_size)
         factor = int(self.slm_size[0] * self.slm_size[1] / (total_size+bias_size))
+#         print(input_data.shape, reservoir.shape, res_size, input_size, factor)
         if not factor:
             raise ValueError(["SLM used pixels are not sufficient. Required at least ", str(total_size+bias_size)])
         else:
