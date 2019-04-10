@@ -57,7 +57,7 @@ import scipy.io as sio
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self,
                  n_res=400, res_scale=1, res_encoding=None, res_enc_dim=1, res_enc_param=None,  # reservoir
-                 input_scale=1, input_dim=1, input_encoding=None, input_enc_dim=1, input_enc_param=None,  # input
+                 input_scale=1, input_dim=None, input_encoding=None, input_enc_dim=1, input_enc_param=None,  # input
                  add_bias=True, bias_scale=1,  # bias
                  random_projection='simulation', weights_type='gaussian',  # weights
                  activation_fun='tanh', activation_param=None, leak_rate=1,  # dynamics
@@ -110,10 +110,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
             from lightonopu.opu import OPU
             from lightonml.random_projections.opu import OPURandomMapping
 
-            self.opu = OPU()
-            self.random_mapping = OPURandomMapping(opu=self.opu, n_components=self.n_res)
+            self.opu = OPU(500, 100)
+            self.random_mapping = OPURandomMapping(opu=self.opu, n_components=self.n_res, disable_pbar=True)
             # Use "disable_pbar=True" if needed
-            self.parallel_runs = 100
         elif self.random_projection == 'meadowlark slm':
             self.cam_sampling_range = None
             self.matlab_eng = matlab_eng
@@ -129,7 +128,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         Iterates the reservoir with training input and fits the output weights based on the first n time steps of
         input_data in order to predict next time steps with length of pred_length, for each n.
         """
-        self.input_dim = input_data.shape[-1]
+        if self.input_dim is None:
+            self.input_dim = input_data.shape[-1]
         start = time.time()
         if self.verbose:
             print('Reservoir Computing algorithm - Training phase:\n')
@@ -174,11 +174,14 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 print('Results saved in memory.')
         return self
 
-
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False):
+    def score(self, input_data, true_output=None, sample_weight=None):
         # If reservoir is in prediction mode, generate the output
-        if self.future_pred and true_output is None:
-            true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
+        if self.future_pred:
+            input_dim = input_data.shape[-1]
+            true_output = np.zeros(input_data.shape[0:-1] + (self.pred_horizon * input_dim,))
+            for i_step in range(self.pred_horizon):
+                true_output[:, :, i_step*input_dim:(i_step+1)*input_dim] = \
+                    np.roll(input_data, -(i_step+1), axis=1)
 
         # Use Reservoir to predict the output
         start = time.time()
@@ -210,8 +213,52 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
+        return score
+
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None):
+        # If reservoir is in prediction mode, generate the output
+        if self.future_pred and true_output is None:
+            true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
+
+        # Use Reservoir to predict the output
+        start = time.time()
+        if self.verbose:
+            print('Reservoir Computing algorithm - Testing phase:\n')
+        self.reset_state()
+        enc_input_data = self.encode_input(input_data)
+        init_end = time.time()
+        init_timer = init_end - start
+        if self.verbose:
+            print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
+
+        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
+        iterate_end = time.time()
+        iterate_timer = iterate_end - init_end
+        if self.verbose:
+            print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
+
+        pred_output = self.output(concat_states)
+
+        # Compare with true output
+        # print(pred_output.shape)
+        # print(true_output.shape)
+        true_output = true_output[:, self.forget:, :]
+        # plt.plot(pred_output[0, :, 0])
+        # plt.plot(true_output[0, :, 0])
+        # plt.show()
+        true_output = true_output.reshape(-1, true_output.shape[-1])
+        pred_output = pred_output.reshape(-1, pred_output.shape[-1])
+        score = self.score_metric(pred_output, true_output)
+
+        test_end = time.time()
+        test_timer = test_end - iterate_end
+        if self.verbose:
+            print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
+            print('Testing score: ' + str(score))
 
         if self.future_pred and detailed_score:
+            # print(pred_output.shape)
+            # print(true_output.shape)
             score = self.detailed_pred_score(pred_output, true_output)
         else:
             score = self.score_metric(pred_output, true_output)
@@ -296,7 +343,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.parallel_runs is None:
             self.state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
         else:
-            self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res, self.parallel_runs))
+            # self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res, self.parallel_runs))
+            self.state = self.random_state.randint(0, 100, size=(self.n_res, self.parallel_runs), dtype=np.uint8)
 
     def encode_input(self, mat):
         """ Encodes the input of the reservoir """
@@ -457,9 +505,51 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                     + self.bias_vec)+ \
                                  (1 - self.leak_rate) * np.roll(previous_state, 1, axis=0);
                 elif self.random_projection == 'lighton opu':
-                    self.state = self.encode_res(self.state)
-                    self.state = self.random_mapping.fit_transform(np.concatenate(
-                        (self.state, input_data[idx_sequence, time_step, :])))
+                    # Create image from self.state and input_data
+                    state_img = self.encode_res(self.state).astype(np.uint8)
+                    # state_img = encode.large_bin_binary(self.state, 0, 200, 10, 0.5).astype(np.uint8)
+                    # state_img  = (self.state > 65).astype(np.uint8)
+                    current_input_data = input_data[idx_sequence, time_step, :].astype(np.uint8)
+
+                    # Previous code that might be relevant
+                    # if len(input_data.shape) == 1:
+                    #     input_data = input_data.reshape((1, -1))
+                    # if len(reservoir.shape) == 1:
+                    #     reservoir = reservoir.reshape((-1, 1))
+
+                    res_repeat = int(np.round(self.res_scale ** 2))
+                    res_size = int(res_repeat * self.n_res * self.res_enc_dim)
+
+                    input_repeat = int(np.round(self.n_res * self.res_enc_dim * self.input_scale ** 2 / self.input_dim / self.input_enc_dim))
+                    input_size = int(input_repeat * input_dim)
+
+                    bias_repeat = int(np.round(self.n_res * self.res_enc_dim * self.bias_scale ** 2))
+                    bias_size = int(bias_repeat)
+
+                    total_size = np.int(res_size + input_size + bias_size)
+                    slm_imgs = np.zeros((n_sequence, total_size))
+                    slm_imgs[:, :bias_repeat] = np.ones((n_sequence, bias_repeat))
+                    slm_imgs[:, bias_repeat:bias_repeat+res_size] = np.repeat(state_img.T, res_repeat, axis=1)
+                    slm_imgs[:, bias_repeat+res_size:] = np.repeat(current_input_data, input_repeat, axis=1)
+                    # slm_imgs[:, :res_size] = np.repeat(state_img.T, res_repeat, axis=1)
+                    # slm_imgs[:, res_size:res_size + input_size] = np.repeat(current_input_data, input_repeat, axis=1)
+                    # slm_imgs[:, res_size+input_size:] = np.ones((n_sequence, bias_repeat))
+
+                    # import matplotlib.pyplot as plt
+                    # plt.imshow(slm_imgs[0, :].reshape(30, -1))
+
+                    self.state = self.leak_rate * \
+                                 (np.sqrt(self.random_mapping.fit_transform(slm_imgs).T) * 16).astype(np.uint8) + \
+                                 (1 - self.leak_rate) * self.state
+
+                    # Display of DMD and camera image
+                    formatted_dmd_img = self.random_mapping.formatting_func(slm_imgs[0, :].reshape(1, -1))
+                    import matplotlib.pyplot as plt
+                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
+
+                    ax1.imshow(self.state[:, 0].reshape(20, -1))
+                    ax2.imshow(formatted_dmd_img.reshape(1140, 912), cmap='gray')
+                    plt.show()
                 elif self.random_projection == 'meadowlark slm':
                     self.state = self.encode_res(self.state)
                     slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
@@ -483,7 +573,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 #                             self.state = np.ravel(np.array(cam_data_matlab._data).reshape(
 #                                 cam_data_matlab.size[::-1]).T)[self.cam_sampling_range]
                 if time_step >= self.forget:
-                    state = np.angle(self.state, deg=False) if state_iscomplex else self.state
+                    state = np.angle(self.state, deg=False) if any(np.iscomplex(self.state.flatten())) else self.state
                     inputdata = np.angle(input_data[idx_sequence, time_step, :], deg=False) \
                         if input_iscomplex else input_data[idx_sequence, time_step, :]
                     concat_states[idx_sequence, time_step - self.forget, :] = np.concatenate((state, inputdata.T)).T
@@ -497,7 +587,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 #             self.matlab_eng = None
 
         if self.verbose >= 2:
-            res_states = concat_states[:, :, :n_complex*self.n_res]
+            res_states = concat_states[:, :, :self.n_res]
             min_res = np.amin(res_states)
             max_res = np.amax(res_states)
             mean_res = np.mean(res_states)
@@ -683,26 +773,31 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     @staticmethod
     def score_metric(pred_output, output):
-        return 1 - np.sum(np.abs(pred_output-output)**2) / np.sum(np.abs(output-np.mean(output))**2)
+        return 1 - np.sum(np.abs(pred_output-output)**2) / max(np.sum(np.abs(output-np.mean(output))**2),
+               np.sum(np.abs(pred_output - np.mean(pred_output)) ** 2))
+    # Correlation
+    # 1 - np.abs(np.conj(pred_output).dot(output))**2 / (np.linalg.norm(pred_output)*np.linalg.norm(output))**2
+    # Or do not add the center in the denominator
 
     def detailed_pred_score(self, pred_output, output):
         if self.future_pred is False:
             print('The "detailed_pred_score" function should only be called in prediction mode.')
             return -1
-        step = int(pred_output.shape[-1] / self.pred_horizon)
-        score_vec = np.zeros((self.pred_horizon, ))
-
-        for i_horizon in range(self.pred_horizon):
-            score_vec[i_horizon] = 1 - np.sum(np.abs(pred_output[:, i_horizon*step:(i_horizon+1)*step] -
-                                                     output[:, i_horizon*step:(i_horizon+1)*step])**2) /\
-                                   np.sum(np.abs(output[:, i_horizon*step:(i_horizon+1)*step] -
-                                                 np.mean(output[:, i_horizon*step:(i_horizon+1)*step]))**2)
+        score_vec = 1 - np.sum(np.abs(pred_output - output)**2, axis=0) / \
+            np.sum(np.abs(output - np.mean(output, axis=0))**2, axis=0)
+        # step = int(pred_output.shape[-1] / self.pred_horizon)
+        # score_vec = np.zeros((self.pred_horizon, ))
+        #
+        # for i_horizon in range(self.pred_horizon):
+        #     score_vec[i_horizon] = 1 - np.sum(np.abs(pred_output[:, i_horizon*step:(i_horizon+1)*step] -
+        #                                              output[:, i_horizon*step:(i_horizon+1)*step])**2) /\
+        #                            np.sum(np.abs(output[:, i_horizon*step:(i_horizon+1)*step] -
+        #                                          np.mean(output[:, i_horizon*step:(i_horizon+1)*step]))**2)
 
         return score_vec
 
-
-
     def generate_slm_imgs(self, input_data, reservoir):
+        slm_size = [1140, 912]  # to be defined properly later
 
         if len(input_data.shape)==1:
             input_data = input_data.reshape((1,-1))
@@ -723,15 +818,14 @@ class Reservoir(BaseEstimator, RegressorMixin):
         bias_repeat = np.round(self.n_res * self.bias_scale**2)
         bias_size = bias_repeat
 
-        # We put everything in a new vector except the bias since the matlab will automatically add it before to send it to SLM
-        total_size = np.int(res_size + input_size)
-        factor = int(self.slm_size[0] * self.slm_size[1] / (total_size+bias_size))
-        if not factor:
-            raise ValueError(["SLM used pixels are not sufficient. Required at least ", str(total_size+bias_size)])
-        else:
-            slm_imgs = np.zeros((n_sequence, total_size*factor))
-            slm_imgs[:, :res_size*factor] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
-            slm_imgs[:, res_size*factor:res_size*factor+input_size*factor] = np.repeat(input_data, input_repeat * factor, axis=1)
-            return slm_imgs
-            
+        # We put everything in a new vector
+        total_size = np.int(res_size + input_size + bias_size)
+        factor = int(slm_size[0] * slm_size[1] / total_size)
+
+        slm_imgs = np.zeros((n_sequence, total_size))
+        slm_imgs[:, :res_size] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
+        slm_imgs[:, res_size:res_size+input_size] = np.repeat(input_data, input_repeat * factor, axis=1)
+        slm_imgs[:, res_size+input_size:] = np.repeat(1, [n_sequence, bias_repeat * factor], axis=1)
+
+        return slm_imgs
         
