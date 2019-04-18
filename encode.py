@@ -7,7 +7,7 @@ These functions are generic and can be used outside the Reservoir Computing fram
 import numpy as np
 
 
-def phase_encoding(mat, scaling_factor=np.pi, n_levels=255):
+def phase_encoding(mat, scaling_factor=np.pi, n_levels=int(256/2)):
     """ Transforms a real-valued vector into a phase-only vector encoded by n_levels from 0 to scaling_factor"""
     mat = np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels
     return np.exp(1j * mat * scaling_factor)

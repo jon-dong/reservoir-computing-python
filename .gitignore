@@ -14,6 +14,7 @@ sftp-config\.json
 
 \.ipynb_checkpoints/
 
-KS_data
+1D_kuramoto_sivashinsky_datasets
+2D_convection_datasets
 
 phase_vec.mat

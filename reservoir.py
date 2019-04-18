@@ -175,45 +175,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return self
 
     def score(self, input_data, true_output=None, sample_weight=None):
-        # If reservoir is in prediction mode, generate the output
-        if self.future_pred:
-            input_dim = input_data.shape[-1]
-            true_output = np.zeros(input_data.shape[0:-1] + (self.pred_horizon * input_dim,))
-            for i_step in range(self.pred_horizon):
-                true_output[:, :, i_step*input_dim:(i_step+1)*input_dim] = \
-                    np.roll(input_data, -(i_step+1), axis=1)
 
-        # Use Reservoir to predict the output
-        start = time.time()
-        if self.verbose:
-            print('Reservoir Computing algorithm - Testing phase:\n')
-        self.reset_state()
-        enc_input_data = self.encode_input(input_data)
-        init_end = time.time()
-        init_timer = init_end - start
-        if self.verbose:
-            print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
-
-        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
-        iterate_end = time.time()
-        iterate_timer = iterate_end - init_end
-        if self.verbose:
-            print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
-
-        pred_output = self.output(concat_states)
-
-        # Compare with true output
-        true_output = true_output[:, self.forget:, :]
-        true_output = true_output.reshape(-1, true_output.shape[-1])
-        pred_output = pred_output.reshape(-1, pred_output.shape[-1])
-        score = self.score_metric(pred_output, true_output)
-
-        test_end = time.time()
-        test_timer = test_end - iterate_end
-        if self.verbose:
-            print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
-            print('Testing score: ' + str(score))
-        return score
+        return self.predict_and_score(input_data, true_output, only_score=True)
 
     def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None):
         # If reservoir is in prediction mode, generate the output
@@ -238,14 +201,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
 
         pred_output = self.output(concat_states)
-
-        # Compare with true output
-        # print(pred_output.shape)
-        # print(true_output.shape)
         true_output = true_output[:, self.forget:, :]
-        # plt.plot(pred_output[0, :, 0])
-        # plt.plot(true_output[0, :, 0])
-        # plt.show()
         true_output = true_output.reshape(-1, true_output.shape[-1])
         pred_output = pred_output.reshape(-1, pred_output.shape[-1])
         score = self.score_metric(pred_output, true_output)
@@ -267,12 +223,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
             return score
         else:
             return pred_output, score
-
-
-    def score(self, input_data, true_output=None, sample_weight=None):
-
-        return self.predict_and_score(input_data, true_output, only_score=True)
-
 
     def initialize(self):
         """ Initializes the reservoir state, the input and reservoir weights """
@@ -456,7 +406,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         n_sequence, sequence_length, input_dim = input_data.shape
 
         input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
-        state_iscomplex = True if self.activation_fun == 'phase' or self.activation_fun == 'phase 8bit' else False
+        # state_iscomplex = True if self.activation_fun == 'phase' or self.activation_fun == 'phase 8bit' else False
         n_parallel = self.parallel_runs if self.parallel_runs is not None else 1
         concat_states = np.zeros((n_sequence, sequence_length-self.forget,
                                   self.n_res+input_dim), dtype=np.float64)
@@ -492,11 +442,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 time_iterable = range(sequence_length)
             for time_step in time_iterable:
                 if self.random_projection == 'simulation':
-                    previous_state = self.state
-                    self.state = self.encode_res(self.state)
-                    self.state = self.leak_rate * act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
-                                    np.dot(self.res_w, self.state) + self.bias_vec) + \
-                                 (1 - self.leak_rate) * previous_state
+                    self.state = self.leak_rate * act(
+                        np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
+                        np.dot(self.res_w, self.encode_res(self.state)) + self.bias_vec) + \
+                                 (1 - self.leak_rate) * self.state
                 elif self.random_projection == 'hyperdimensional':
                     # Remove the reservoir weights
                     previous_state = self.state
@@ -629,6 +578,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                                     tol=1e-5, alpha=self.train_param)
             clf.fit(concat_states, y)
             return clf.coef_.T
+        elif self.train_method == 'ridge_parallel':
+            # because of processors overheating can work longer than the standard ridg regression
+            from sklearn.multioutput import MultiOutputRegressor
+            clf = MultiOutputRegressor(sklearn.linear_model.Ridge(fit_intercept=False, alpha=self.train_param), n_jobs=-1)
+            clf.fit(concat_states, y)
+            return np.array([clf.estimators_[i].coef_ for i in range(len(clf.estimators_))]).T
+
         elif self.train_method == 'random regression':
             def random_regression(X, y, order=0):
                 n, d = X.shape
