@@ -293,8 +293,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.parallel_runs is None:
             self.state = self.random_state.normal(loc=0., scale=1, size=self.n_res)
         else:
-            # self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res, self.parallel_runs))
-            self.state = self.random_state.randint(0, 100, size=(self.n_res, self.parallel_runs), dtype=np.uint8)
+            self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res, self.parallel_runs))
+            # self.state = self.random_state.randint(0, 100, size=(self.n_res, self.parallel_runs), dtype=np.uint8)
 
     def encode_input(self, mat):
         """ Encodes the input of the reservoir """
