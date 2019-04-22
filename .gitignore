@@ -16,5 +16,5 @@ sftp-config\.json
 
 1D_kuramoto_sivashinsky_datasets
 2D_convection_datasets
-
+dumped_output_weights
 phase_vec.mat
