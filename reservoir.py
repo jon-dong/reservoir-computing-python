@@ -581,7 +581,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.train_method == 'ridge_parallel':
             # because of processors overheating can work longer than the standard ridg regression
             from sklearn.multioutput import MultiOutputRegressor
-            clf = MultiOutputRegressor(sklearn.linear_model.Ridge(fit_intercept=False, alpha=self.train_param), n_jobs=-1)
+            clf = MultiOutputRegressor(sklearn.linear_model.Ridge(fit_intercept=False, alpha=self.train_param), n_jobs=3)
             clf.fit(concat_states, y)
             return np.array([clf.estimators_[i].coef_ for i in range(len(clf.estimators_))]).T
 
