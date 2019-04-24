@@ -189,6 +189,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
             true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
+        elif true_output.shape[-1] == self.input_dim and self.pred_horizon != 1:
+            true_output = data_utils.roll_and_concat(true_output, roll_num=self.pred_horizon)
 
         # Use Reservoir to predict the output
         start = time.time()
