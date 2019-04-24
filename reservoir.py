@@ -154,6 +154,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         true_output = y[:, self.forget:, :]
         self.output_w = self.train(concat_states, true_output)
+        # print(self.output_w.shape)
+        # import matplotlib.pyplot as plt
+        # plt.hist(self.output_w[:, 200], bins=20)
+        # plt.show()
+        # self.output_w = (self.output_w > 0)
 
         pred_output = self.output(concat_states)
         self.fit_score = self.score_metric(pred_output, true_output)
@@ -204,22 +209,27 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         pred_output = self.output(concat_states)
         true_output = true_output[:, self.forget:, :]
-        true_output = true_output.reshape(-1, true_output.shape[-1])
-        pred_output = pred_output.reshape(-1, pred_output.shape[-1])
-        score = self.score_metric(pred_output, true_output)
-
-        test_end = time.time()
-        test_timer = test_end - iterate_end
-        if self.verbose:
-            print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
-            print('Testing score: ' + str(score))
 
         if self.future_pred and detailed_score:
             # print(pred_output.shape)
             # print(true_output.shape)
             score = self.detailed_pred_score(pred_output, true_output)
         else:
+            true_output = true_output.reshape(-1, true_output.shape[-1])
+            pred_output = pred_output.reshape(-1, pred_output.shape[-1])
             score = self.score_metric(pred_output, true_output)
+        # plt.plot(pred_output[0, :, 0])
+        # plt.plot(true_output[0, :, 0])
+        # plt.show()
+        true_output = true_output.reshape(-1, true_output.shape[-1])
+        pred_output = pred_output.reshape(-1, pred_output.shape[-1])
+        final_score = self.score_metric(pred_output, true_output)
+
+        test_end = time.time()
+        test_timer = test_end - iterate_end
+        if self.verbose:
+            print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
+            print('Testing score: ' + str(final_score))
 
         if only_score:
             return score
@@ -458,6 +468,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 elif self.random_projection == 'lighton opu':
                     # Create image from self.state and input_data
                     state_img = self.encode_res(self.state).astype(np.uint8)
+
+                    # if any(self.state.flatten() > 35):
+                    #     state_img = (self.state > 35).astype(np.uint8)
+                    # else:
+                    #     state_img = self.state
+
                     # state_img = encode.large_bin_binary(self.state, 0, 200, 10, 0.5).astype(np.uint8)
                     # state_img  = (self.state > 65).astype(np.uint8)
                     current_input_data = input_data[idx_sequence, time_step, :].astype(np.uint8)
@@ -489,17 +505,21 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     # import matplotlib.pyplot as plt
                     # plt.imshow(slm_imgs[0, :].reshape(30, -1))
 
+                    cam_img = self.random_mapping.fit_transform(slm_imgs)
                     self.state = self.leak_rate * \
-                                 (np.sqrt(self.random_mapping.fit_transform(slm_imgs).T) * 16).astype(np.uint8) + \
+                                 (np.sqrt(cam_img.T) * 16).astype(np.uint8) + \
                                  (1 - self.leak_rate) * self.state
+                    # self.state = (self.random_mapping.fit_transform(slm_imgs).T > 35).astype(np.uint8)
 
                     # Display of DMD and camera image
                     formatted_dmd_img = self.random_mapping.formatting_func(slm_imgs[0, :].reshape(1, -1))
                     import matplotlib.pyplot as plt
                     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
 
-                    ax1.imshow(self.state[:, 0].reshape(20, -1))
+                    ax1.imshow(self.state[:, 0].reshape(23, -1))
                     ax2.imshow(formatted_dmd_img.reshape(1140, 912), cmap='gray')
+                    self.img_dmd = formatted_dmd_img.reshape(1140, 912)
+                    self.img_cam = cam_img
                     plt.show()
                 elif self.random_projection == 'meadowlark slm':
                     self.state = self.encode_res(self.state)
@@ -731,8 +751,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     @staticmethod
     def score_metric(pred_output, output):
-        return 1 - np.sum(np.abs(pred_output-output)**2) / max(np.sum(np.abs(output-np.mean(output))**2),
-               np.sum(np.abs(pred_output - np.mean(pred_output)) ** 2))
+        # return 1 - np.sum(np.abs(pred_output-output)**2) / max(np.sum(np.abs(output-np.mean(output))**2),
+        #        np.sum(np.abs(pred_output - np.mean(pred_output)) ** 2))
+        return np.abs(np.sum(np.conj(pred_output)*(output)))**2 / (np.linalg.norm(pred_output)*np.linalg.norm(output))**2
     # Correlation
     # 1 - np.abs(np.conj(pred_output).dot(output))**2 / (np.linalg.norm(pred_output)*np.linalg.norm(output))**2
     # Or do not add the center in the denominator
@@ -741,16 +762,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.future_pred is False:
             print('The "detailed_pred_score" function should only be called in prediction mode.')
             return -1
-        score_vec = 1 - np.sum(np.abs(pred_output - output)**2, axis=0) / \
-            np.sum(np.abs(output - np.mean(output, axis=0))**2, axis=0)
-        # step = int(pred_output.shape[-1] / self.pred_horizon)
-        # score_vec = np.zeros((self.pred_horizon, ))
-        #
-        # for i_horizon in range(self.pred_horizon):
-        #     score_vec[i_horizon] = 1 - np.sum(np.abs(pred_output[:, i_horizon*step:(i_horizon+1)*step] -
-        #                                              output[:, i_horizon*step:(i_horizon+1)*step])**2) /\
-        #                            np.sum(np.abs(output[:, i_horizon*step:(i_horizon+1)*step] -
-        #                                          np.mean(output[:, i_horizon*step:(i_horizon+1)*step]))**2)
+        # score_vec = 1 - np.sum(np.abs(pred_output - output)**2, axis=0) / \
+            # np.sum(np.abs(output - np.mean(output, axis=0))**2, axis=0)
+
+        n_parallel, sequence_length, pred_horizon = output.shape
+        effective_length = sequence_length - pred_horizon  # remove the end to avoid aliasing effects
+        rmse = np.zeros((effective_length, pred_horizon))
+        for t in range(effective_length):
+            for pred in range(pred_horizon):
+                d1 = pred_output[:, t, 0:pred].flatten()  # for 1D time series
+                d2 = output[:, t, 0:pred].flatten()
+                rmse[t, pred] = np.sqrt(np.sum((d1 - d2) ** 2) / (pred+1) / n_parallel)
+        score_vec = np.mean(rmse, axis=0)
 
         return score_vec
 
