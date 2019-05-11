@@ -9,12 +9,16 @@ import numpy as np
 
 def phase_encoding(mat, scaling_factor=np.pi, n_levels=int(256/2)):
     """ Transforms a real-valued vector into a phase-only vector encoded by n_levels from 0 to scaling_factor"""
-    mat = np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels
+    mat_min = np.amin(mat, axis = (-2, -1))
+    mat_max = np.amax(mat, axis = (-2, -1))
+    mat = np.round((mat.T - mat_min)/(mat_max - mat_min) * n_levels).T / n_levels
     return np.exp(1j * mat * scaling_factor)
 
 def slm_encoding(mat, scaling_factor=int(256/2), n_levels=int(256/2)):
     """ Transforms a real-valued vector into a vector encoded by n_levels from 0 to scaling_factor"""
-    return np.round((mat - np.min(mat))/(np.amax(mat)-np.min(mat)) * n_levels) / n_levels * scaling_factor
+    mat_min = np.amin(mat, axis = (-2, -1))
+    mat_max = np.amax(mat, axis = (-2, -1))
+    return np.round((mat.T - mat_min)/(mat_max - mat_min) * n_levels).T / n_levels * scaling_factor
 
 def binary_threshold(mat, threshold):
     """ A simple threshold function """
