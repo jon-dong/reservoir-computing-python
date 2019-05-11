@@ -147,10 +147,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             for i in range(input_data.shape[0]):
                 preprocessing.scale(input_data[i, :, :], axis=0, copy=False)
         if self.scale_input_MinMax:
-            for i in range(input_data.shape[0]):
-                scaler = preprocessing.MinMaxScaler(feature_range=self.scale_input_MinMax, copy=False)
-                scaler.fit(input_data[i, :, :])
-                scaler.transform((input_data[i, :, :]))
+            encode.scale(input_data, self.scale_input_MinMax, in_place=True)
         
         if self.input_dim is None:
             self.input_dim = input_data.shape[-1]
@@ -167,10 +164,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 for i in range(y.shape[0]):
                     preprocessing.scale(y[i, :, :], axis=0, copy=False)
             if self.scale_output_MinMax:
-                for i in range(y.shape[0]):
-                    scaler = preprocessing.MinMaxScaler(feature_range=self.scale_output_MinMax, copy=False)
-                    scaler.fit(y[i, :, :])
-                    scaler.transform((y[i, :, :]))
+                encode.scale(y, self.scale_output_MinMax, in_place=True)
+
             if y.shape[-1] == self.input_dim and self.pred_horizon != 1:
                 y = data_utils.roll_and_concat(y, roll_num=self.pred_horizon)
             
@@ -227,10 +222,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
             for i in range(input_data.shape[0]):
                 preprocessing.scale(input_data[i, :, :], axis=0, copy=False)
         if self.scale_input_MinMax:
-            for i in range(input_data.shape[0]):
-                scaler = preprocessing.MinMaxScaler(feature_range=self.scale_input_MinMax, copy=False)
-                scaler.fit(input_data[i, :, :])
-                scaler.transform((input_data[i, :, :]))
+            encode.scale(input_data, self.scale_input_MinMax, in_place=True)
+
         
         if self.future_pred and true_output is None:
             true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
@@ -239,10 +232,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 for i in range(true_output.shape[0]):
                     preprocessing.scale(true_output[i, :, :], axis=0, copy=False)
             if self.scale_output_MinMax:
-                for i in range(true_output.shape[0]):
-                    scaler = preprocessing.MinMaxScaler(feature_range=self.scale_output_MinMax, copy=False)
-                    scaler.fit(true_output[i, :, :])
-                    scaler.transform((true_output[i, :, :]))
+                encode.scale(true_output, self.scale_output_MinMax, in_place=True)
             if true_output.shape[-1] == self.input_dim and self.pred_horizon != 1:
                 true_output = data_utils.roll_and_concat(true_output, roll_num=self.pred_horizon)
 
@@ -492,7 +482,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 if self.random_projection == 'simulation':
                     self.state = act(
                         np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
-                        self.leak_rate * np.dot(self.res_w, self.encode_res(self.state)) + 
+                        self.leak_rate * np.dot(self.res_w, self.encode_res(self.state.T).T) + 
                         (1 - self.leak_rate) * self.state + 
                         self.bias_vec)
                 elif self.random_projection == 'hyperdimensional':
@@ -589,10 +579,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
             for i in range(n_sequence):
                 preprocessing.scale(res_states[i, :, :], axis=0, copy=False)
         if self.scale_res_MinMax:
-            for i in range(n_sequence):
-                scaler = preprocessing.MinMaxScaler(feature_range=self.scale_res_MinMax, copy=False)
-                scaler.fit(res_states[i, :, :])
-                scaler.transform((res_states[i, :, :]))
+            encode.scale(res_states, self.scale_res_MinMax, in_place=True)
+
 
         # construct the concatenated states
         if not self.raw_input_feature and not self.enc_input_feature:
@@ -606,10 +594,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     for i in range(n_sequence):
                         preprocessing.scale(enc_input_data[i, :, :], axis=0, copy=False)
                 if self.scale_input_MinMax:
-                    for i in range(n_sequence):
-                        scaler = preprocessing.MinMaxScaler(feature_range=self.scale_input_MinMax, copy=False)
-                        scaler.fit(enc_input_data[i, :, :])
-                        scaler.transform((enc_input_data[i, :, :]))
+                    encode.scale(enc_input_data, self.scale_input_MinMax, in_place=True)
                 inputdata = np.concatenate((raw_input_data, enc_input_data), axis=2)
             else:
                 if self.raw_input_feature:
@@ -623,10 +608,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                         for i in range(n_sequence):
                             preprocessing.scale(inputdata[i, :, :], axis=0, copy=False)
                     if self.scale_input_MinMax:
-                        for i in range(n_sequence):
-                            scaler = preprocessing.MinMaxScaler(feature_range=self.scale_input_MinMax, copy=False)
-                            scaler.fit(inputdata[i, :, :])
-                            scaler.transform((inputdata[i, :, :]))
+                        encode.scale(inputdata, self.scale_input_MinMax, in_place=True)
+
             concat_states = np.concatenate((res_states, inputdata), axis=2)
         if self.parallel_res > 1:
             n_sequence, sequence_length, concat_dim = concat_states.shape

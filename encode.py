@@ -9,16 +9,12 @@ import numpy as np
 
 def phase_encoding(mat, scaling_factor=np.pi, n_levels=int(256/2)):
     """ Transforms a real-valued vector into a phase-only vector encoded by n_levels from 0 to scaling_factor"""
-    mat_min = np.amin(mat, axis = (-2, -1))
-    mat_max = np.amax(mat, axis = (-2, -1))
-    mat = np.round((mat.T - mat_min)/(mat_max - mat_min) * n_levels).T / n_levels
+    mat = np.round(scale(mat, [0, 1]) * n_levels) / n_levels
     return np.exp(1j * mat * scaling_factor)
 
 def slm_encoding(mat, scaling_factor=int(256/2), n_levels=int(256/2)):
     """ Transforms a real-valued vector into a vector encoded by n_levels from 0 to scaling_factor"""
-    mat_min = np.amin(mat, axis = (-2, -1))
-    mat_max = np.amax(mat, axis = (-2, -1))
-    return np.round((mat.T - mat_min)/(mat_max - mat_min) * n_levels).T / n_levels * scaling_factor
+    return np.round(scale(mat, [0, 1]) * n_levels).T / n_levels * scaling_factor
 
 def binary_threshold(mat, threshold):
     """ A simple threshold function """
@@ -107,3 +103,20 @@ def bit_encoding(mat, lower_bound=-0.5, higher_bound=0.5, binary_dim=8):
         enc_input_data[..., i_bit::binary_dim] = \
             np.mod(np.floor(bit_mat / 2**i_bit), 2) == 1
     return enc_input_data
+
+
+def scale(array, min_max, in_place=False):
+    if in_place:
+        a = array.min(axis=(-1, -2))
+        b = array.max(axis=(-1, -2))
+        array = np.transpose(array, axes=(1, 2, 0))
+        array -= a
+        array /= b - a
+        array *= min_max[1] - min_max[0]
+        array += min_max[0]
+        array = np.transpose(array, axes=(2, 0, 1))
+
+    else:    
+        a = array.min(axis=(-1, -2))
+        b = array.max(axis=(-1, -2))
+        return (min_max[0] + (min_max[1] - min_max[0]) * (array.T - a) / (b - a)).T
