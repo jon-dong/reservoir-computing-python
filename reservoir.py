@@ -588,7 +588,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.enc_input_feature:
             enc_input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
             enc_input_data = np.angle(
-                input_data[:, self.forget:, :], deg=False) if enc_input_iscomplex else input_data[:, self.forget, :]
+                input_data, deg=False) if enc_input_iscomplex else input_data
             concat_states = np.concatenate((concat_states, enc_input_data[:, self.forget:, :]), axis=2)
 
         if self.parallel_res > 1:
