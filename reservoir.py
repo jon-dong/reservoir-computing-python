@@ -581,36 +581,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.scale_res_MinMax:
             encode.scale(res_states, self.scale_res_MinMax, in_place=True)
 
-
         # construct the concatenated states
-        if not self.raw_input_feature and not self.enc_input_feature:
-            concat_states = res_states
-        else:
-            if self.raw_input_feature and self.enc_input_feature:
-                enc_input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
-                enc_input_data = np.angle(
-                    input_data[:, self.forget:, :], deg=False) if enc_input_iscomplex else input_data[:, self.forget, :]
-                if self.input_standardize:
-                    for i in range(n_sequence):
-                        preprocessing.scale(enc_input_data[i, :, :], axis=0, copy=False)
-                if self.scale_input_MinMax:
-                    encode.scale(enc_input_data, self.scale_input_MinMax, in_place=True)
-                inputdata = np.concatenate((raw_input_data, enc_input_data), axis=2)
-            else:
-                if self.raw_input_feature:
-                    inputdata = raw_input_data[:, self.forget:, :]
-                if self.enc_input_feature:
-                    enc_input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
-                    enc_input_data = np.angle(
-                        input_data[:, self.forget:, :], deg=False) if enc_input_iscomplex else input_data[:, self.forget, :]
-                    inputdata = enc_input_data
-                    if self.input_standardize:
-                        for i in range(n_sequence):
-                            preprocessing.scale(inputdata[i, :, :], axis=0, copy=False)
-                    if self.scale_input_MinMax:
-                        encode.scale(inputdata, self.scale_input_MinMax, in_place=True)
+        concat_states = res_states
+        if self.raw_input_feature:
+            concat_states = np.concatenate((concat_states, raw_input_data[:, self.forget:, :]), axis=2)
+        if self.enc_input_feature:
+            enc_input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
+            enc_input_data = np.angle(
+                input_data[:, self.forget:, :], deg=False) if enc_input_iscomplex else input_data[:, self.forget, :]
+            concat_states = np.concatenate((concat_states, enc_input_data[:, self.forget:, :]), axis=2)
 
-            concat_states = np.concatenate((res_states, inputdata), axis=2)
         if self.parallel_res > 1:
             n_sequence, sequence_length, concat_dim = concat_states.shape
             concat_states = concat_states.reshape((
