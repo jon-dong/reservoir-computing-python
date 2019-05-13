@@ -53,6 +53,7 @@ import sys
 import encode
 import data_utils
 import scipy.io as sio
+import warnings
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
@@ -460,17 +461,20 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.matlab_eng is None:
                 import matlab.engine
                 self.matlab_eng = matlab.engine.start_matlab()
+                self.matlab_eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
+                # camera initialization
                 if self.cam_roi is None:
                     self.cam_roi = [350, 350]
                 self.matlab_eng.workspace['cam_roi'] = matlab.double(self.cam_roi)
+                self.matlab_eng.open_camera(nargout=0)
+                self.cam_sampling_range = np.linspace(0, (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1, self.n_res, dtype='uint32')
+                if self.n_res > (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1:
+                    warnings.warn("The number of camera pixels is less than the required size of the reservoir")
+                # SLM initialization
                 if self.slm_size is None:
                     self.slm_size = [512, 512]
                 self.matlab_eng.workspace['slm_size'] = matlab.double(self.slm_size)
-                self.cam_sampling_range = np.linspace(0, (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1, self.n_res, dtype='uint32')
-                self.matlab_eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
                 self.matlab_eng.open_slm(nargout=0)
-                self.matlab_eng.open_maitai(nargout=0)
-                self.matlab_eng.open_camera(nargout=0)
 
         for i_sequence in range(int(n_sequence / self.parallel_runs)):
             idx_sequence = np.arange(i_sequence * self.parallel_runs, (i_sequence + 1) * self.parallel_runs)
@@ -550,8 +554,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     plt.show()
                 elif self.random_projection == 'meadowlark slm':
                     self.state = self.encode_res(self.state)
-                    slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
                     if self.parallel_runs==1:
+                        slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
                         adict = {}
                         adict['phase_vec'] = np.array(slm_imgs[0,:], dtype='uint8') # since SLM is 8bit
                         sio.savemat('phase_vec.mat', adict)
