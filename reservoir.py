@@ -71,7 +71,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  cam_roi=None, cam_sampling_range=None, slm_size=None, matlab_eng=None, # SLM experiment
                  random_state=None, save=0, verbose=1,  # misc
                  N_0=1, N_1=1, time_change=None, change_type='tanh',  # dynamic activation function options
-                 refreshing=False):  # for refreshing res_state method
+                 refreshing=False, ref_horizon=None, parallel=None):  # for refreshing res_state method
         self.n_res = n_res
         self.res_scale = res_scale
         self.res_encoding = res_encoding
@@ -102,6 +102,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.scale_res_MinMax = scale_res_MinMax 
         self.scale_output_MinMax = scale_output_MinMax 
         self.refreshing = refreshing
+        self.ref_horizon = ref_horizon
+        self.parallel = parallel
 
 
         self.train_param = train_param
@@ -157,6 +159,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         Iterates the reservoir with training input and fits the output weights based on the first n time steps of
         input_data in order to predict next time steps with length of pred_length, for each n.
         """
+        print('input_data.shape = '+str(input_data.shape))
         if self.input_standardize:
             for i in range(input_data.shape[0]):
                 preprocessing.scale(input_data[i, :, :], axis=0, copy=False)
@@ -236,10 +239,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return self.predict_and_score(input_data, true_output, only_score=True)
 
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None, n_test=None, ref_horizon=None, parallel=None):
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None, n_test=None, ref_horizon_manual=None, parallel_manual=None):
         # If reservoir is in prediction mode, generate the output
         # print('input_data.shape = ' + str(input_data.shape))
         # true_pred_horizon = self.true_pred_horizon
+        if ref_horizon_manual is None:
+            ref_horizon = self.ref_horizon
+            parallel = self.parallel
+        else:
+            ref_horizon = ref_horizon_manual
+            parallel = parallel_manual
         spatial_points = input_data.shape[2]
         if self.input_standardize:
             for i in range(input_data.shape[0]):
@@ -513,6 +522,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             input_data = self.encode_input(raw_input_data.reshape((raw_input_data.shape[0], 1, raw_input_data.shape[1])))
             # print('input_data.shape = '+str(input_data.shape))
         else:
+            print('raw_input_data.shape = '+str(raw_input_data.shape))
             input_data = self.encode_input(raw_input_data)
         # print('input_data.shanpe = ' + str(input_data.shape))
         n_sequence, sequence_length, input_dim = input_data.shape
