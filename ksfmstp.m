@@ -23,7 +23,6 @@ function [tt, aa, da] = ksfmstp(a0, d, h, nstp, np)
 %  Computation is based on v = fft(u), so linear term is diagonal.
 %  Adapted from: AK Kassam and LN Trefethen, SISC 2005
 
-
   if nargin < 5, np = 0; end
   N = length(a0)+2;  Nh = N/2;  % N should be even (preferably power of 2)
   if nargout < 3,

@@ -70,8 +70,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  raw_input_feature = False, enc_input_feature = True, # concatenated states properties
                  cam_roi=None, cam_sampling_range=None, slm_size=None, matlab_eng=None, # SLM experiment
                  random_state=None, save=0, verbose=1,  # misc
-                 N_0=1, N_1=1, time_change=None, change_type='tanh',  # dynamic activation function options
-                 refreshing=False):  # for refreshing res_state method
+                 N_0=1, N_1=1, time_change=None, change_type='tanh'  # dynamic activation function options
+                 ):
         self.n_res = n_res
         self.res_scale = res_scale
         self.res_encoding = res_encoding
@@ -100,9 +100,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.output_standardize = output_standardize 
         self.scale_input_MinMax = scale_input_MinMax 
         self.scale_res_MinMax = scale_res_MinMax 
-        self.scale_output_MinMax = scale_output_MinMax 
-        self.refreshing = refreshing
-
+        self.scale_output_MinMax = scale_output_MinMax
 
         self.train_param = train_param
         self.random_state = random_state
@@ -130,10 +128,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.init_timer = None
         self.iterate_timer = None
         self.train_timer = None
-
-        if self.refreshing:
-            self.pred_horizon = 1
-            print('Predict horizon has been set to 1')
 
         if self.random_projection == 'lighton opu':
             from lightonopu.opu import OPU
@@ -191,12 +185,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Initialization complete. \t\tElapsed time: ' + str(self.init_timer) + ' s')
         
-        if self.refreshing:
-            self.refreshing = False
-            concat_states = self.iterate(input_data)
-            self.refreshing = True
-        else:
-            concat_states = self.iterate(input_data)
+        concat_states = self.iterate(input_data)
 
         iterate_end = time.time()
         self.iterate_timer = iterate_end - init_end
@@ -205,11 +194,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         true_output = y[:, self.forget:, :]
         self.output_w = self.train(concat_states, true_output)
-        # print(self.output_w.shape)
-        # import matplotlib.pyplot as plt
-        # plt.hist(self.output_w[:, 200], bins=20)
-        # plt.show()
-        # self.output_w = (self.output_w > 0)
 
         pred_output = self.output(concat_states)
         self.fit_score = self.score_metric(pred_output, true_output)
@@ -236,28 +220,28 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return self.predict_and_score(input_data, true_output, only_score=True)
 
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None, n_test=None, ref_horizon=None, parallel=None):
-        # If reservoir is in prediction mode, generate the output
-        # print('input_data.shape = ' + str(input_data.shape))
-        # true_pred_horizon = self.true_pred_horizon
-        spatial_points = input_data.shape[2]
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False,
+                          sample_weight=None):
+        n_sequence, sequence_length, spatial_points = input_data.shape
+        # preprocessing of the input data
         if self.input_standardize:
             for i in range(input_data.shape[0]):
                 preprocessing.scale(input_data[i, :, :], axis=0, copy=False)
         if self.scale_input_MinMax:
             encode.scale(input_data, self.scale_input_MinMax, in_place=True)
 
-        
+        # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
-            true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
+            true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon*self.rec_pred_steps)
         else:
+            # preprocessing of the output data
             if self.output_standardize:
                 for i in range(true_output.shape[0]):
                     preprocessing.scale(true_output[i, :, :], axis=0, copy=False)
             if self.scale_output_MinMax:
                 encode.scale(true_output, self.scale_output_MinMax, in_place=True)
-            if true_output.shape[-1] == self.input_dim and self.pred_horizon != 1:
-                true_output = data_utils.roll_and_concat(true_output, roll_num=self.pred_horizon)
+            if true_output.shape[-1] == self.input_dim and self.pred_horizon*self.rec_pred_steps != 1:
+                true_output = data_utils.roll_and_concat(true_output, roll_num=self.pred_horizon*self.rec_pred_steps)
 
         # Use Reservoir to predict the output
         start = time.time()
@@ -269,49 +253,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
-        if self.refreshing:
-            self.refreshing = False
-            concat_states = self.iterate(input_data[:, :self.forget+parallel, :])
-            # print('input_data[:, :self.forget+parallel, :].shape = '+str(input_data[:, :self.forget+parallel, :].shape))
-            print('concat_states.shape = '+str(concat_states.shape))
-            self.refreshing = True
-        else:
-            concat_states = self.iterate(input_data)  # shape (sequence_length, n_res)
+        true_output = true_output[:, self.forget:, :].reshape(-1, true_output.shape[-1])
+        pred_output = np.zeros((sequence_length - self.forget, spatial_points*self.pred_horizon*self.rec_pred_steps))
+        input_data_temp = input_data
+        for i in range(self.rec_pred_steps):
+            concat_states = self.iterate(input_data_temp)  # refreshing the concat states for each prediction step
+            input_data_temp = self.output(concat_states).reshape(-1, self.output_w.shape[-1])
+            pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp
         iterate_end = time.time()
         iterate_timer = iterate_end - init_end
         if self.verbose:
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
 
-        
-        # print(true_output.shape)
-
-        # refreshing function
-        if self.refreshing:
-            pred_output_temp = self.output(concat_states).reshape(-1, self.output_w.shape[-1])
-            # print('pred_output_temp.shape = ' + str(pred_output_temp.shape))
-            pred_output = np.zeros((parallel, ref_horizon, spatial_points))
-            # print('pred_output.shape = ' + str(pred_output.shape))
-            pred_output[:, 0, :] = pred_output_temp                                                      # first predict output
-            for i in range(ref_horizon-1):
-                concat_states = self.iterate(pred_output_temp, concat_states_matrix=concat_states)       # refreshing the concat states for each prediction step
-                pred_output_temp = self.output(concat_states).reshape(-1, self.output_w.shape[-1])       # using refreshed concat state to predict next output
-                # print(pred_output_temp[:3, :3])
-                pred_output[:, i+1, :] = pred_output_temp                                                # saving the output
-            # pred_output = pred_output.reshape((-1, spatial_points))                                      # reshaping the output into 2D matrix
-            # print('pred_output = ' + str(pred_output[:4, :3]))
-            # print(input_data[:, self.forget:, :].shape)
-            # print('pred_output.shape = '+str(pred_output.shape))
-            true_output = data_utils.roll_and_concat(input_data[:, self.forget:, :], roll_num=ref_horizon, isparallel=True, parallel=parallel, ref_horizon=ref_horizon)
-            # print('true_output.shape = '+str(true_output.shape))
-            true_output = true_output[:parallel, :, :]
-            # print('true_output.shape = '+str(true_output.shape))
-            # print('true_output = ' + str(true_output[:3, :3]))
-            score = self.score_metric(pred_output, true_output)
-        else:
-            pred_output = self.output(concat_states).reshape(-1, self.output_w.shape[-1])
-            true_output = true_output[:, self.forget:, :].reshape(-1, true_output.shape[-1])
-            score = self.score_metric(pred_output, true_output)
-
+        score = self.score_metric(pred_output, true_output)
 
         test_end = time.time()
         test_timer = test_end - iterate_end
@@ -319,13 +273,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
             
-        if detailed_score and self.refreshing is False:
-            rmse, rmse_vec = self.detailed_pred_score(pred_output, input_data, spatial_points)
-            return pred_output, rmse, rmse_vec
-        elif detailed_score and self.refreshing:
-            n_test = input_data.shape[1]
-            # print(n_test)
-            rmse, rmse_vec = self.detailed_pred_score(pred_output, true_output, spatial_points, n_test=n_test)
+        if detailed_score:
+            rmse, rmse_vec = self.detailed_pred_score(pred_output, true_output, spatial_points)
             return pred_output, rmse, rmse_vec
         elif only_score:
             return score
@@ -399,7 +348,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Resets the reservoir state, for new runs """
         # To-do: add different statistics
         self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res, self.parallel_runs))
-        # print('self.state.shape = ' + str(self.state.shape))
 
     def encode_input(self, mat):
         """ Encodes the input of the reservoir """
@@ -506,63 +454,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
         else:  # in this last case, we allow external definition of the activation function
             return self.activation_fun
 
-    def iterate(self, raw_input_data, concat_states_matrix=None):
+    def iterate(self, raw_input_data):
         """ Iterates the reservoir and return all the successive reservoir states """
-        if self.refreshing:
-            # if refreshing is true, input data is 2D (previous pred_output), while the iterate function is dealing with 3D inputs
+        if len(raw_input_data.shape) == 2:
+            # if input data is 2D (previous pred_output) means it is in refreshing phase
             input_data = self.encode_input(raw_input_data.reshape((raw_input_data.shape[0], 1, raw_input_data.shape[1])))
-            # print('input_data.shape = '+str(input_data.shape))
+            self.forget = 0
+            self.parallel_runs = input_data.shape[0]
         else:
             input_data = self.encode_input(raw_input_data)
-        # print('input_data.shanpe = ' + str(input_data.shape))
         n_sequence, sequence_length, input_dim = input_data.shape
         act = self.activation()
-        state_iscomplex = None
-        res_states = None
-        new_line = None
-        
-        if self.refreshing:
-            # print('concat_states_matrix.shape = ' + str(concat_states_matrix.shape))
-            # concat_states_matrix = np.roll(concat_states_matrix, 1, axis=1)
-            # print('state.T.shape = ' + str(self.state.T.shape))
-            # print('input_data[:, input_data.shape[1]-1, :].T.shape = ' + str(input_data[:, input_data.shape[1]-1, :].T.shape))
-            self.state = act(
-                        np.dot(self.input_w, input_data[:, input_data.shape[1]-1, :].T) +
-                            self.leak_rate * np.dot(self.res_w, self.encode_res(self.state.T).T) + 
-                                (1 - self.leak_rate) * self.state + 
-                                    self.bias_vec)                                        # the iteration of state is the same as the case when refreshing is off
-            # print('state.T.shape = ' + str(self.state.T.shape))
-
-            if state_iscomplex is None:
-                state_iscomplex = True if any(np.iscomplex(self.state.flatten())) else False
-                # print('state is complex')
-            if res_states is None:
-                res_states = np.zeros(
-                    (n_sequence, 1, 
-                        (1+state_iscomplex)*self.n_res), dtype=np.float64)
-            state = np.concatenate(
-                (np.abs(self.state)**2, 
-                    np.angle(self.state, deg=False))) if state_iscomplex else self.state
-            res_states[:, 0, :] = state.T
-            # print('res_states.shape = '+str(res_states.shape))
-            # print('complete')
-
-            concat_states = res_states
-            # print('concat_states.shape = '+str(concat_states.shape))
-            if self.raw_input_feature:
-                concat_states = np.concatenate((concat_states, raw_input_data), axis=2)
-            if self.enc_input_feature:
-                enc_input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
-                enc_input_data = np.angle(
-                    input_data, deg=False) if enc_input_iscomplex else input_data
-                # print('enc_input_data.shape = '+str(enc_input_data.shape))
-                concat_states = np.concatenate((concat_states, enc_input_data), axis=2)
-            # new_line = np.concatenate((state.T, enc_input_data[:, input_data.shape[1]-1, :]), axis=1)
-            # print('new_line.shape = ' + str(new_line.shape))
-            # concat_states_matrix[0, concat_states_matrix.shape[1]-1, :] = new_line[0, :]
-            # print('concat_states_matrix.shape = ' + str(concat_states_matrix.shape))
-            return concat_states
-            
+        res_states = np.zeros((n_sequence, sequence_length - self.forget, self.n_res), dtype=np.complex64)
 
         # Initialize hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
@@ -591,13 +494,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 time_iterable = range(sequence_length)
             for time_step in time_iterable:
                 if self.random_projection == 'simulation':
-                    # print('input_data[idx_sequence, time_step, :].T.shape = ' + str(input_data[idx_sequence, time_step, :].T.shape))
                     self.state = act(
                         np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
                         self.leak_rate * np.dot(self.res_w, self.encode_res(self.state.T).T) + 
                         (1 - self.leak_rate) * self.state + 
                         self.bias_vec)
-                    # print('state.T.shape = ' + str(self.state.T.shape))
                 elif self.random_projection == 'hyperdimensional':
                     # Remove the reservoir weights
                     previous_state = self.state
@@ -676,17 +577,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
                         raise ValueError("parallel_runs can not be greater than one")
 
                 if time_step >= self.forget:
-                    if state_iscomplex is None:
-                        state_iscomplex = True if any(np.iscomplex(self.state.flatten())) else False
-                    if res_states is None:
-                        res_states = np.zeros(
-                            (n_sequence, sequence_length-self.forget,
-                             (1+state_iscomplex)*self.n_res), dtype=np.float64)
-                    state = np.concatenate(
-                        (np.abs(self.state)**2, 
-                         np.angle(self.state, deg=False))) if state_iscomplex else self.state
-                    res_states[idx_sequence, time_step - self.forget, :] = state.T
-                    
+                    res_states[idx_sequence, time_step - self.forget, :] = self.state.T
+        res_states = np.real_if_close(res_states)
+        self.state = res_states.reshape((-1, res_states.shape[-1])).T # will be used in update equation if recursive prediction is active
+        state_iscomplex = True if any(np.iscomplex(res_states.flatten())) else False
+        res_states = np.concatenate((np.abs(res_states) ** 2,
+                                     np.angle(res_states, deg=False))) if state_iscomplex else res_states
+
         # standardization of the reservoir
         if self.res_standardize:
             for i in range(n_sequence):
@@ -790,124 +687,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         total_output = np.dot(concat_states, self.output_w)
         return total_output
 
-    def recursive_predict(self, input_data):
-        """ Feedback the prediction as input, to predict the future of the input time series """
-        start = time.time()
-        if self.verbose:
-            print('Start of testing...')
-        self.reset_state()
-        self.forget = 0
-        enc_input_data = self.encode_input(input_data)
-        encode_end = time.time()
-        encode_timer = encode_end - start
-        if self.verbose:
-            print('Initialization finished. Elapsed time:')
-            print(encode_timer)
-
-        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
-        iterate_end = time.time()
-        iterate_timer = iterate_end - encode_end
-        if self.verbose:
-            print('Iterations finished. Elapsed time:')
-            print(iterate_timer)
-
-        # Recursive prediction: use the reservoir prediction as input
-        n_sequence, sequence_length, input_dim = input_data.shape
-        output = np.zeros((n_sequence, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
-        reservoir_output = self.output(concat_states)
-        # Put all the next-time-step prediction in output (starting from 1 since 0 is not predicted)
-        output[:, 1:sequence_length, :] = reservoir_output[:, :-1, :input_dim]
-        output[:, 0, :] = input_data[:, 0, :]  # We put the original input_data for the first point
-        # Use the last state to predict the future
-        output[:, sequence_length:sequence_length+self.pred_horizon, :] = \
-            np.reshape(reservoir_output[:, -1, :], (n_sequence, self.pred_horizon, input_dim))
-        for i_rec_step in range(1, self.rec_pred_steps):
-            next_input = reservoir_output[:, -1, :].reshape((n_sequence, self.pred_horizon, input_dim))
-            enc_next_input = self.encode_input(next_input)
-            next_concat_states = self.iterate(enc_next_input)
-            reservoir_output = self.output(next_concat_states)
-            output[:, sequence_length+i_rec_step*self.pred_horizon:
-                   sequence_length+(i_rec_step+1)*self.pred_horizon, :] = \
-                np.reshape(reservoir_output[:, -1, :], (n_sequence, self.pred_horizon, input_dim))
-
-        test_end = time.time()
-        test_timer = test_end - iterate_end
-        if self.verbose:
-            print('Testing finished. Elapsed time:')
-            print(test_timer)
-        return output
-
-    def recursive_predict_score(self, input_data):
-        """ Feedback the prediction as input, to predict the future of the input time series """
-        start = time.time()
-        if self.verbose:
-            print('Start of testing...')
-        trunc_input_data = input_data[:, :-self.pred_horizon*self.rec_pred_steps, :]
-        self.reset_state()
-        self.forget = 0
-        enc_input_data = self.encode_input(trunc_input_data)
-        encode_end = time.time()
-        encode_timer = encode_end - start
-        if self.verbose:
-            print('Initialization finished. Elapsed time:')
-            print(encode_timer)
-
-        concat_states = self.iterate(enc_input_data)  # shape (sequence_length, n_res)
-        iterate_end = time.time()
-        iterate_timer = iterate_end - encode_end
-        if self.verbose:
-            print('Iterations finished. Elapsed time:')
-            print(iterate_timer)
-
-        n_sequence, sequence_length, input_dim = trunc_input_data.shape
-        if n_sequence != 1:
-            raise('The number of sequences should be equal to 1 in recursive prediction mode.')
-
-        # Change to parallel mode
-        n_parallel = 100
-        previous_parallel = self.parallel_runs
-        self.parallel_runs = n_parallel
-        # Also retrieve the previous states
-        self.state = concat_states[0, -n_parallel:, :self.n_res].T
-
-        # Recursive prediction: use the reservoir prediction as input
-        output = np.zeros((n_parallel, sequence_length+self.pred_horizon*self.rec_pred_steps, input_dim))
-        reservoir_output = self.output(concat_states)
-        # Put all the next-time-step prediction in output (starting from 1 since 0 is not predicted)
-        for i_parallel in range(n_parallel):
-            output[i_parallel, i_parallel+1:sequence_length, :] = reservoir_output[0, :-i_parallel-1, :input_dim]
-            output[i_parallel, :i_parallel+1, :] = input_data[:, :i_parallel+1, :]
-            output[i_parallel, sequence_length:sequence_length+self.pred_horizon, :] = \
-                np.reshape(reservoir_output[0, -i_parallel-1, :], (1, self.pred_horizon, input_dim))
-        for i_rec_step in range(1, self.rec_pred_steps):
-            next_input = output[:, sequence_length + i_rec_step*self.pred_horizon - 1, :].reshape(n_parallel, 1, -1)
-            enc_next_input = self.encode_input(next_input)
-            next_concat_states = self.iterate(enc_next_input)
-            reservoir_output = self.output(next_concat_states)
-            output[:, sequence_length+i_rec_step*self.pred_horizon:
-                   sequence_length+(i_rec_step+1)*self.pred_horizon, :] = \
-                np.reshape(reservoir_output[:, -1, :], (n_parallel, self.pred_horizon, input_dim))
-
-        test_end = time.time()
-        test_timer = test_end - iterate_end
-        if self.verbose:
-            print('Testing finished. Elapsed time:')
-            print(test_timer)
-
-        score_vec = np.zeros((self.pred_horizon * self.rec_pred_steps,))
-        error_vec = np.zeros((self.pred_horizon * self.rec_pred_steps,))
-        for i_parallel in range(n_parallel):
-            vec1 = output[i_parallel, sequence_length:, :]
-            vec2 = input_data[0, sequence_length-i_parallel:
-                                 sequence_length-i_parallel+self.pred_horizon*self.rec_pred_steps, :]
-            error_vec += np.squeeze(np.abs(vec1 - vec2) ** 2)
-        error_vec /= n_parallel
-        score_vec = 1 - error_vec / np.mean(np.abs(input_data - np.mean(input_data)) ** 2)
-        # TODO: test the normalization
-
-        self.parallel_runs = previous_parallel
-        return error_vec, output
-
     @staticmethod
     def score_metric(pred_output, output):
         #return 1 - np.sum(np.abs(pred_output-output)**2) / max(np.sum(np.abs(output-np.mean(output))**2),
@@ -918,46 +697,28 @@ class Reservoir(BaseEstimator, RegressorMixin):
     # 1 - np.abs(np.conj(pred_output).dot(output))**2 / (np.linalg.norm(pred_output)*np.linalg.norm(output))**2
     # Or do not add the center in the denominator
 
-    def detailed_pred_score(self, pred_output, input_data, spatial_points, n_test=None):
-        # print(pred_output[:10])
-        # print(input_data[:10])
+    def detailed_pred_score(self, pred_output, true_data, spatial_points):
         if self.future_pred is False:
             print('The "detailed_pred_score" function should only be called in prediction mode.')
             return -1
         # score_vec = 1 - np.sum(np.abs(pred_output - output)**2, axis=0) / \
             # np.sum(np.abs(output - np.mean(output, axis=0))**2, axis=0)
 
-        if self.refreshing:
-            true_data = input_data
-            true_data_std = np.std(true_data)
-            true_data_norm = true_data/true_data_std
-            pred_output_norm = pred_output/true_data_std
-            parallel, ref_horizon, spatial_points = pred_output.shape
-            rmse = np.zeros((parallel, ref_horizon))
-            for n_input in range(parallel):
-                for n_pred in range(ref_horizon):
-                    rmse[n_input, n_pred] = np.sqrt((1. / spatial_points) * np.sum((pred_output[n_input, n_pred, :].flatten() - input_data[n_input, n_pred, :].flatten())**2))
+        total_pred = self.pred_horizon*self.rec_pred_steps
+        true_data_std = np.std(true_data) # think about better normalization
+        true_data_norm = true_data/true_data_std
+        pred_output_norm = pred_output/true_data_std
+        length_input = pred_output.shape[0] - total_pred
 
-            rmse_vec = np.mean(rmse, axis=0)
-            return rmse, rmse_vec
-        else:
-            total_pred = self.pred_horizon*self.rec_pred_steps
-            true_data = input_data[:, self.forget:, :]
-            true_data_std = np.std(true_data) # think about better normalization
-            true_data_norm = data_utils.roll_and_concat(true_data, roll_num=self.pred_horizon)[0]/true_data_std
-            pred_output_norm = pred_output/true_data_std
-            length_input = pred_output.shape[0] - total_pred
+        rmse = np.zeros((length_input, total_pred))
+        for n_input in range(1, length_input):
+            for n_pred in range(1, total_pred):
+                d1 = pred_output_norm[n_input, :].reshape(-1, spatial_points)[0:n_pred,:]
+                d2 = true_data_norm[n_input:n_input+n_pred, 0:spatial_points]
+                rmse[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
 
-            rmse = np.zeros((length_input, total_pred))
-            for n_input in range(1, length_input):
-                for n_pred in range(1, total_pred):
-                    d1 = pred_output_norm[n_input, :].reshape(-1, spatial_points)[0:n_pred,:]
-                    d2 = true_data_norm[n_input:n_input+n_pred, 0:spatial_points]
-                    
-                    rmse[n_input, n_pred] = np.sqrt(1./(n_pred*(spatial_points))*np.sum((d1.flatten() - d2.flatten())**2))
-
-            rmse_vec = np.mean(rmse, axis=0)
-            return rmse, rmse_vec
+        rmse_vec = np.mean(rmse, axis=0)
+        return rmse, rmse_vec
 
     def generate_slm_imgs(self, input_data, reservoir):
         slm_size = [1140, 912]  # to be defined properly later

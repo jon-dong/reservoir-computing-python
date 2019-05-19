@@ -13,7 +13,7 @@ def kuramoto_sivashinsky(sequence_length=1000, n_sequence=1,  spatial_points=100
     solution of the Kuramoto–Sivashinsky equation, u_t + u*u_x + α*u_xx + γ*u_xxxx = 0,
     computed by tanh-function method.
     '''
-    # Octave functions are download from https://github.com/qyxiao/machine-learning-2016-spring/blob/master
+    # Octave functions are downloaded from https://github.com/qyxiao/machine-learning-2016-spring/blob/master
     from oct2py import octave
     N = spatial_points
     h = 0.25 # time step length
@@ -38,7 +38,7 @@ def kuramoto_sivashinsky_matlab(sequence_length=1000, n_sequence=1,  spatial_poi
     solution of the Kuramoto–Sivashinsky equation, u_t + u*u_x + α*u_xx + γ*u_xxxx = 0,
     computed by tanh-function method.
     '''
-    # Octave functions are download from https://github.com/qyxiao/machine-learning-2016-spring/blob/master
+    # Matlab functions are downloaded from https://github.com/qyxiao/machine-learning-2016-spring/blob/master
     import matlab.engine
     matlab_eng = matlab.engine.start_matlab()
     N = spatial_points
@@ -51,19 +51,12 @@ def kuramoto_sivashinsky_matlab(sequence_length=1000, n_sequence=1,  spatial_poi
     xx = np.zeros((n_sequence, spatial_points+1, 1))
     for idx in range(n_sequence):
         a0 = np.random.rand(N-2,1)/4  # just some initial condition
-        scipy.io.savemat('a0.mat', dict(a0=a0))
-        scipy.io.savemat('L.mat', dict(L=L))
-        scipy.io.savemat('h.mat', dict(h=h))
-        scipy.io.savemat('nstp.mat', dict(nstp=nstp))
-        # matlab_eng.cd(r'C:\Users\SMARTIES\Documents\reservoir-computing-python', nargout=0)
-        # a0_mat = matlab.double(a0.tolist())
-        matlab_eng.construct(nargout=0)
-        # [tt[idx], fdata] = matlab_eng.ksfmstp(a0, L, h, nstp, 1, nargout=2)
-        tt[idx] = scipy.io.loadmat('tt.mat')['tt']
-        # fdata = scipy.io.loadmat('da.mat', 'da')
-        # [xx[idx], input_data[idx,:,:]] = matlab_eng.ksfm2real(fdata, L, nargout=2)
-        xx[idx] = scipy.io.loadmat('xx.mat')['xx']
-        input_data[idx,:,:] = scipy.io.loadmat('ii.mat')['ii']
+        [tt_, fdata] = matlab_eng.ksfmstp(matlab.double(a0.tolist()), L, h, nstp, 1, nargout=2)
+        tt[idx] = np.array(tt_._data).reshape(tt_.size[::-1]).T
+        [xx_, input_data_] = matlab_eng.ksfm2real(fdata, L, nargout=2)
+        xx[idx] = np.array(xx_._data).reshape(xx_.size[::-1]).T
+        input_data[idx,:,:] = np.array(input_data_._data).reshape(input_data_.size[::-1]).T
+    matlab_eng.quit()
     # we remove first time and spatial indices because sometimes they get bad values
     input_data = input_data[:,1:,1:]
     tt = np.linspace(np.min(tt[:, :, :-1]), np.max(tt[:, :, :-1]), sequence_length)
