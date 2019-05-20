@@ -220,7 +220,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return self.predict_and_score(input_data, true_output, only_score=True)
 
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False,
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, parallel=100, 
                           sample_weight=None):
         n_sequence, sequence_length, spatial_points = input_data.shape
         # preprocessing of the input data
@@ -232,7 +232,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
-            true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon*self.rec_pred_steps)
+            true_output = data_utils.roll_and_concat(input_data[:, self.forget:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
+            # print('true_output.shape = '+str(true_output.shape))
+            true_output = true_output[:, :parallel, :]
         else:
             # preprocessing of the output data
             if self.output_standardize:
@@ -253,11 +255,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
-        true_output = true_output[:, self.forget:, :].reshape(-1, true_output.shape[-1])
-        pred_output = np.zeros((sequence_length - self.forget, spatial_points*self.pred_horizon*self.rec_pred_steps))
-        input_data_temp = input_data
+        true_output = true_output.reshape(-1, true_output.shape[-1])
+        pred_output = np.zeros((parallel, spatial_points*self.pred_horizon*self.rec_pred_steps))
+        input_data_temp = input_data[:, :self.forget+parallel, :]
         for i in range(self.rec_pred_steps):
             concat_states = self.iterate(input_data_temp)  # refreshing the concat states for each prediction step
+            # print('concat_states.shape = '+str(concat_states.shape))
             input_data_temp = self.output(concat_states).reshape(-1, self.output_w.shape[-1])
             pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp
         iterate_end = time.time()
