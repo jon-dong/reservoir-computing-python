@@ -70,7 +70,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  raw_input_feature = False, enc_input_feature = True, # concatenated states properties
                  cam_roi=None, cam_sampling_range=None, slm_size=None, matlab_eng=None, # SLM experiment
                  random_state=None, save=0, verbose=1,  # misc
-                 N_0=1, N_1=1, time_change=None, change_type='tanh'  # dynamic activation function options
+                 N_0=1, N_1=1, time_change=None, change_type='tanh',  # dynamic activation function options
+                 gridsearch=False    # see if we're doing gridsearch
                  ):
         self.n_res = n_res
         self.res_scale = res_scale
@@ -101,6 +102,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.scale_input_MinMax = scale_input_MinMax 
         self.scale_res_MinMax = scale_res_MinMax 
         self.scale_output_MinMax = scale_output_MinMax
+        self.gridsearch = gridsearch
 
         self.train_param = train_param
         self.random_state = random_state
@@ -147,6 +149,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
             self.res_w_im = None
 
     def fit(self, input_data, y=None):
+        if self.gridsearch:
+            input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
         """
         Iterates the reservoir with training input and fits the output weights based on the first n time steps of
         input_data in order to predict next time steps with length of pred_length, for each n.
@@ -222,6 +226,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, parallel=100, 
                           sample_weight=None):
+        if self.gridsearch:
+            input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
+        # print('self.forget = ' + str(self.forget))
         n_sequence, sequence_length, spatial_points = input_data.shape
         # preprocessing of the input data
         if self.input_standardize:
@@ -232,8 +239,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
-            true_output = data_utils.roll_and_concat(input_data[:, self.forget:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
+            # print('true_output is None.')
+            # print('true_output = '+str(input_data[:, self.forget:, :][:, :3, :4]))
+            true_output = data_utils.roll_and_concat(input_data[:, self.forget-1:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
             # print('true_output.shape = '+str(true_output.shape))
+            # print('true_output = '+str(true_output[:, :3, 28:31]))
             true_output = true_output[:, :parallel, :]
         else:
             # preprocessing of the output data
@@ -257,12 +267,20 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         true_output = true_output.reshape(-1, true_output.shape[-1])
         pred_output = np.zeros((parallel, spatial_points*self.pred_horizon*self.rec_pred_steps))
+        # print('self.forget = '+str(self.forget))
+        # print('self.output_w.shape = '+str(self.output_w.shape))
         input_data_temp = input_data[:, :self.forget+parallel, :]
         for i in range(self.rec_pred_steps):
-            concat_states = self.iterate(input_data_temp)  # refreshing the concat states for each prediction step
+            # print('input_data_temp.shape = '+str(input_data_temp.shape))
+            concat_states = self.iterate(input_data_temp).reshape(parallel, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
+            # if i == 0:
+            #     concat_states = concat_states.reshape(parallel, 1, self.n_res+spatial_points)
             # print('concat_states.shape = '+str(concat_states.shape))
-            input_data_temp = self.output(concat_states).reshape(-1, self.output_w.shape[-1])
+            input_data_temp = self.output(concat_states)
+            # print('input_data_temp = '+str(input_data_temp[:3,:4]))
             pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp
+        # print('pred_output = '+str(pred_output[:3, :4]))
+        # print('true_output = '+str(true_output[:3, :4]))
         iterate_end = time.time()
         iterate_timer = iterate_end - init_end
         if self.verbose:
@@ -701,6 +719,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
     # Or do not add the center in the denominator
 
     def detailed_pred_score(self, pred_output, true_data, spatial_points):
+        # print('pred_output = '+str(pred_output[:3, :4]))
+        # print('true_data = '+str(true_data[:3, :4]))
         if self.future_pred is False:
             print('The "detailed_pred_score" function should only be called in prediction mode.')
             return -1
@@ -708,16 +728,17 @@ class Reservoir(BaseEstimator, RegressorMixin):
             # np.sum(np.abs(output - np.mean(output, axis=0))**2, axis=0)
 
         total_pred = self.pred_horizon*self.rec_pred_steps
+        # print('total_pred = '+str(total_pred))
         true_data_std = np.std(true_data) # think about better normalization
         true_data_norm = true_data/true_data_std
         pred_output_norm = pred_output/true_data_std
-        length_input = pred_output.shape[0] - total_pred
+        length_input = pred_output.shape[0]
 
         rmse = np.zeros((length_input, total_pred))
         for n_input in range(1, length_input):
             for n_pred in range(1, total_pred):
-                d1 = pred_output_norm[n_input, :].reshape(-1, spatial_points)[0:n_pred,:]
-                d2 = true_data_norm[n_input:n_input+n_pred, 0:spatial_points]
+                d1 = pred_output_norm[n_input, :n_pred*spatial_points]
+                d2 = true_data_norm[n_input, :n_pred*spatial_points]
                 rmse[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
 
         rmse_vec = np.mean(rmse, axis=0)
