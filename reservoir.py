@@ -733,14 +733,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
         true_data_norm = true_data/true_data_std
         pred_output_norm = pred_output/true_data_std
         length_input = pred_output.shape[0]
+        rand = np.random.rand(pred_output_norm.shape[0], pred_output_norm.shape[1])*max(abs(true_data_norm.flatten()))
 
         rmse = np.zeros((length_input, total_pred))
+        rmse_rand = np.zeros((length_input, total_pred))
         for n_input in range(1, length_input):
             for n_pred in range(1, total_pred):
                 d1 = pred_output_norm[n_input, :n_pred*spatial_points]
                 d2 = true_data_norm[n_input, :n_pred*spatial_points]
+                d_rand = rand[n_input, :n_pred*spatial_points]
                 rmse[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
-
+                rmse_rand[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d_rand.flatten() - d2.flatten())**2))
+        norm = np.mean(rmse_rand)
+        rmse = rmse / norm
         rmse_vec = np.mean(rmse, axis=0)
         return rmse, rmse_vec
 
