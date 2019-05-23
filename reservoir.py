@@ -48,7 +48,7 @@ from scipy.linalg import lstsq
 import sklearn.linear_model
 from sklearn import preprocessing
 import time
-from tqdm import tqdm_notebook as tqdm
+from tqdm import tnrange, tqdm_notebook
 import sys
 import encode
 import data_utils
@@ -270,7 +270,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # print('self.forget = '+str(self.forget))
         # print('self.output_w.shape = '+str(self.output_w.shape))
         input_data_temp = input_data[:, :self.forget+parallel, :]
-        for i in range(self.rec_pred_steps):
+        for i in tnrange(self.rec_pred_steps, desc='reservoir update'):
             # print('input_data_temp.shape = '+str(input_data_temp.shape))
             concat_states = self.iterate(input_data_temp).reshape(parallel, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
             # if i == 0:
@@ -509,8 +509,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         for i_sequence in range(int(n_sequence / self.parallel_runs)):
             idx_sequence = np.arange(i_sequence * self.parallel_runs, (i_sequence + 1) * self.parallel_runs)
-            if self.verbose:
-                time_iterable = tqdm(range(sequence_length), file=sys.stdout)
+            if self.verbose and sequence_length>1:
+                time_iterable = tqdm_notebook(range(sequence_length), file=sys.stdout,  desc='reservoir construction')
             else:
                 time_iterable = range(sequence_length)
             for time_step in time_iterable:
