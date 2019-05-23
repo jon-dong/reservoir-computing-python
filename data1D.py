@@ -33,7 +33,7 @@ def kuramoto_sivashinsky(sequence_length=1000, n_sequence=1,  spatial_points=100
     xx = xx[0, :-1, 0]
     return input_data, xx, tt
 
-def kuramoto_sivashinsky_matlab(sequence_length=1000, n_sequence=1,  spatial_points=100):
+def kuramoto_sivashinsky_matlab(sequence_length=1000, n_sequence=1, spatial_points=100):
     '''
     solution of the Kuramoto–Sivashinsky equation, u_t + u*u_x + α*u_xx + γ*u_xxxx = 0,
     computed by tanh-function method.
