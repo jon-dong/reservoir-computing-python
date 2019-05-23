@@ -48,7 +48,7 @@ from scipy.linalg import lstsq
 import sklearn.linear_model
 from sklearn import preprocessing
 import time
-from tqdm import tqdm
+from tqdm import tqdm_notebook as tqdm
 import sys
 import encode
 import data_utils
