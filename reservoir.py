@@ -48,7 +48,7 @@ from scipy.linalg import lstsq
 import sklearn.linear_model
 from sklearn import preprocessing
 import time
-from tqdm import tqdm
+from tqdm import tnrange, tqdm_notebook
 import sys
 import encode
 import data_utils
@@ -148,7 +148,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             self.res_w_re = None
             self.res_w_im = None
 
-    def fit(self, input_data, y=None):
+    def fit(self, input_data, true_output=None):
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
         """
@@ -169,19 +169,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.initialize()
         self.reset_state()
         # If reservoir is in prediction mode, generate the output
-        if self.future_pred and y is None:
-            y = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
+        if self.future_pred and true_output is None:
+            true_output = data_utils.roll_and_concat(input_data, roll_num=self.pred_horizon)
         else:
             if self.output_standardize:
-                for i in range(y.shape[0]):
-                    preprocessing.scale(y[i, :, :], axis=0, copy=False)
+                for i in range(true_output.shape[0]):
+                    preprocessing.scale(true_output[i, :, :], axis=0, copy=False)
             if self.scale_output_MinMax:
-                encode.scale(y, self.scale_output_MinMax, in_place=True)
+                encode.scale(true_output, self.scale_output_MinMax, in_place=True)
 
-            if y.shape[-1] == self.input_dim and self.pred_horizon != 1:
-                y = data_utils.roll_and_concat(y, roll_num=self.pred_horizon)
+            if true_output.shape[-1] == self.input_dim and self.pred_horizon != 1:
+                true_output = data_utils.roll_and_concat(true_output, roll_num=self.pred_horizon)
             
-        if self.parallel_res != input_data.shape[0]/y.shape[0]:
+        if self.parallel_res != input_data.shape[0]/true_output.shape[0]:
             raise ValueError("the number of parallel_res or the ratio of training target sets are selected wrong")
 
         init_end = time.time()
@@ -191,12 +191,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
         
         concat_states = self.iterate(input_data)
 
+
         iterate_end = time.time()
         self.iterate_timer = iterate_end - init_end
         if self.verbose:
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(self.iterate_timer) + ' s')
 
-        true_output = y[:, self.forget:, :]
+        true_output = true_output[:, self.forget:, :]
         self.output_w = self.train(concat_states, true_output)
 
         pred_output = self.output(concat_states)
@@ -211,7 +212,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             with open('out/concat_states.out', 'w') as f:
                 print(concat_states, file=f)
             with open('out/train_y.out', 'w') as f:
-                print(y, file=f)
+                print(true_output, file=f)
             with open('out/weights.out', 'w') as f:
                 print(self.output_w, file=f)
             with open('out/train_predict.out', 'w') as f:
@@ -224,11 +225,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return self.predict_and_score(input_data, true_output, only_score=True)
 
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, parallel=100, 
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False,
                           sample_weight=None):
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
-        # print('self.forget = ' + str(self.forget))
         n_sequence, sequence_length, spatial_points = input_data.shape
         # preprocessing of the input data
         if self.input_standardize:
@@ -239,12 +239,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
-            # print('true_output is None.')
-            # print('true_output = '+str(input_data[:, self.forget:, :][:, :3, :4]))
-            true_output = data_utils.roll_and_concat(input_data[:, self.forget-1:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
-            # print('true_output.shape = '+str(true_output.shape))
-            # print('true_output = '+str(true_output[:, :3, 28:31]))
-            true_output = true_output[:, :parallel, :]
+            true_output = data_utils.roll_and_concat(
+                input_data[:, self.forget:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
+            true_output = true_output[:, :-self.pred_horizon*self.rec_pred_steps, :]
         else:
             # preprocessing of the output data
             if self.output_standardize:
@@ -253,7 +250,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.scale_output_MinMax:
                 encode.scale(true_output, self.scale_output_MinMax, in_place=True)
             if true_output.shape[-1] == self.input_dim and self.pred_horizon*self.rec_pred_steps != 1:
-                true_output = data_utils.roll_and_concat(true_output, roll_num=self.pred_horizon*self.rec_pred_steps)
+                true_output = data_utils.roll_and_concat(
+                    true_output[:, self.forget:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
+                true_output = true_output[:, :-self.pred_horizon * self.rec_pred_steps, :]
 
         # Use Reservoir to predict the output
         start = time.time()
@@ -266,13 +265,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
         true_output = true_output.reshape(-1, true_output.shape[-1])
-        pred_output = np.zeros((parallel, spatial_points*self.pred_horizon*self.rec_pred_steps))
+        pred_output = np.zeros((sequence_length - self.forget - self.pred_horizon*self.rec_pred_steps, spatial_points*self.pred_horizon*self.rec_pred_steps))
         # print('self.forget = '+str(self.forget))
         # print('self.output_w.shape = '+str(self.output_w.shape))
-        input_data_temp = input_data[:, :self.forget+parallel, :]
-        for i in range(self.rec_pred_steps):
+        input_data_temp = input_data[:, :sequence_length - self.pred_horizon*self.rec_pred_steps, :]
+        for i in tnrange(self.rec_pred_steps, desc='reservoir update'):
             # print('input_data_temp.shape = '+str(input_data_temp.shape))
-            concat_states = self.iterate(input_data_temp).reshape(parallel, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
+            concat_states = self.iterate(input_data_temp).reshape(-1, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
             # if i == 0:
             #     concat_states = concat_states.reshape(parallel, 1, self.n_res+spatial_points)
             # print('concat_states.shape = '+str(concat_states.shape))
@@ -509,8 +508,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         for i_sequence in range(int(n_sequence / self.parallel_runs)):
             idx_sequence = np.arange(i_sequence * self.parallel_runs, (i_sequence + 1) * self.parallel_runs)
-            if self.verbose:
-                time_iterable = tqdm(range(sequence_length), file=sys.stdout)
+            if self.verbose and sequence_length>1:
+                time_iterable = tqdm_notebook(range(sequence_length), file=sys.stdout,  desc='reservoir construction')
             else:
                 time_iterable = range(sequence_length)
             for time_step in time_iterable:
