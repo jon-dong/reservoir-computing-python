@@ -39,7 +39,6 @@ Internal attributes:
 To-do:
     -
 """
-
 import numpy as np
 
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -53,6 +52,7 @@ import sys
 import encode
 import data_utils
 import scipy.io as sio
+
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
