@@ -166,7 +166,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     preprocessing.scale(y[i, :, :], axis=0, copy=False)
             if self.scale_output_MinMax:
                 encode.scale(y, self.scale_output_MinMax, in_place=True)
-
             if y.shape[-1] == self.input_dim and self.pred_horizon != 1:
                 y = data_utils.roll_and_concat(y, roll_num=self.pred_horizon)
             
@@ -461,12 +460,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.matlab_eng is None:
                 import matlab.engine
                 self.matlab_eng = matlab.engine.start_matlab()
-                self.matlab_eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
+                self.matlab_eng.cd(r'D:\Users\Comedia\Desktop\reservoir-computing-python\hardware_control', nargout=0)
                 # camera initialization
                 if self.cam_roi is None:
                     self.cam_roi = [350, 350]
                 self.matlab_eng.workspace['cam_roi'] = matlab.double(self.cam_roi)
-                self.matlab_eng.open_camera(nargout=0)
+                self.matlab_eng.camera_open(nargout=0)
                 self.cam_sampling_range = np.linspace(0, (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1, self.n_res, dtype='uint32')
                 if self.n_res > (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1:
                     warnings.warn("The number of camera pixels is less than the required size of the reservoir")
@@ -474,7 +473,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 if self.slm_size is None:
                     self.slm_size = [512, 512]
                 self.matlab_eng.workspace['slm_size'] = matlab.double(self.slm_size)
-                self.matlab_eng.open_slm(nargout=0)
+                self.matlab_eng.slm_open(nargout=0)
 
         for i_sequence in range(int(n_sequence / self.parallel_runs)):
             idx_sequence = np.arange(i_sequence * self.parallel_runs, (i_sequence + 1) * self.parallel_runs)
@@ -558,7 +557,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                         slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
                         adict = {}
                         adict['phase_vec'] = np.array(slm_imgs[0,:], dtype='uint8') # since SLM is 8bit
-                        sio.savemat('phase_vec.mat', adict)
+                        sio.savemat('hardware_control/phase_vec.mat', adict)
                         self.matlab_eng.get_speckle(nargout=0)
                         cam_data_matlab = self.matlab_eng.workspace['data']
                         self.state = ((1-self.leak_rate)*np.ravel(np.array(cam_data_matlab._data).reshape(
@@ -828,10 +827,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return score_vec
 
     def generate_slm_imgs(self, input_data, reservoir):
-        slm_size = [1140, 912]  # to be defined properly later
-
-        if len(input_data.shape)==1:
-            input_data = input_data.reshape((1,-1))
 
         # We first fix the size of the reservoir
         res_repeat = np.round(self.res_scale**2)
@@ -848,12 +843,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         # We put everything in a new vector
         total_size = np.int(res_size + input_size + bias_size)
-        factor = int(slm_size[0] * slm_size[1] / total_size)
 
         slm_imgs = np.zeros((n_sequence, total_size))
-        slm_imgs[:, :res_size] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
-        slm_imgs[:, res_size:res_size+input_size] = np.repeat(input_data, input_repeat * factor, axis=1)
-        slm_imgs[:, res_size+input_size:] = np.repeat(1, [n_sequence, bias_repeat * factor], axis=1)
+        slm_imgs[:, :res_size] = np.repeat(reservoir, res_repeat, axis=1)
+        slm_imgs[:, res_size:res_size+input_size] = np.repeat(input_data, input_repeat, axis=1)
+        slm_imgs[:, res_size+input_size:] = np.repeat([[1]]*n_sequence, bias_repeat, axis=1)
 
         return slm_imgs
         
