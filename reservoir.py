@@ -284,9 +284,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
         iterate_timer = iterate_end - init_end
         if self.verbose:
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
-
-        score = self.score_metric(pred_output, true_output)
-
+        try:
+            score = self.score_metric(pred_output, true_output)
+        except MemoryError:
+            print("No sufficient memory for score calculation")
+            score = None
         test_end = time.time()
         test_timer = test_end - iterate_end
         if self.verbose:
@@ -478,7 +480,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir and return all the successive reservoir states """
         if len(raw_input_data.shape) == 2:
             # if input data is 2D (previous pred_output) means it is in refreshing phase
-            input_data = self.encode_input(raw_input_data.reshape((raw_input_data.shape[0], 1, raw_input_data.shape[1])))
+            raw_input_data = raw_input_data.reshape((raw_input_data.shape[0], 1, raw_input_data.shape[1]))
+            input_data = self.encode_input(raw_input_data)
             self.forget = 0
             self.parallel_runs = input_data.shape[0]
         else:
@@ -712,7 +715,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         #return 1 - np.sum(np.abs(pred_output-output)**2) / max(np.sum(np.abs(output-np.mean(output))**2),
         #                                                       np.sum(np.abs(pred_output - np.mean(pred_output)) ** 2))
         return np.abs(np.sum(np.conj(pred_output)*(output)))**2 / (np.linalg.norm(pred_output)*np.linalg.norm(output))**2
-#         return np.abs(np.sum(np.conj(pred_output)*(output)))**2 / (np.linalg.norm(pred_output)*np.linalg.norm(output))**2
     # Correlation
     # 1 - np.abs(np.conj(pred_output).dot(output))**2 / (np.linalg.norm(pred_output)*np.linalg.norm(output))**2
     # Or do not add the center in the denominator
@@ -729,18 +731,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
         total_pred = self.pred_horizon*self.rec_pred_steps
         # print('total_pred = '+str(total_pred))
         true_data_std = np.std(true_data) # think about better normalization
-        true_data_norm = true_data/true_data_std
-        pred_output_norm = pred_output/true_data_std
+        true_data_max = max([max(true_data.flatten()), -min(true_data.flatten())])
+        true_data = true_data
+        pred_output = pred_output
         length_input = pred_output.shape[0]
-        rand = np.random.rand(pred_output_norm.shape[0], pred_output_norm.shape[1])*max(abs(true_data_norm.flatten()))
 
         rmse = np.zeros((length_input, total_pred))
         rmse_rand = np.zeros((length_input, total_pred))
         for n_input in range(1, length_input):
             for n_pred in range(1, total_pred):
-                d1 = pred_output_norm[n_input, :n_pred*spatial_points]
-                d2 = true_data_norm[n_input, :n_pred*spatial_points]
-                d_rand = rand[n_input, :n_pred*spatial_points]
+                d1 = pred_output[n_input, :n_pred*spatial_points]/true_data_std
+                d2 = true_data[n_input, :n_pred*spatial_points]/true_data_std
+                d_rand = np.random.rand(n_pred*spatial_points)*true_data_max/true_data_std
                 rmse[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
                 rmse_rand[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d_rand.flatten() - d2.flatten())**2))
         norm = np.mean(rmse_rand)
