@@ -90,8 +90,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.activation_param = activation_param
         self.leak_rate = leak_rate
         self.parallel_runs = parallel_runs if parallel_runs is not None else 1
+        self.parallel_runs__ = self.parallel_runs
         self.parallel_res = parallel_res
         self.forget = forget
+        self.forget__ = forget
         self.future_pred = future_pred
         self.pred_horizon = pred_horizon
         self.rec_pred_steps = rec_pred_steps
@@ -190,6 +192,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Initialization complete. \t\tElapsed time: ' + str(self.init_timer) + ' s')
         
         concat_states = self.iterate(input_data)
+        self.fit_res_state = self.state
 
 
         iterate_end = time.time()
@@ -225,11 +228,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return self.predict_and_score(input_data, true_output, only_score=True)
 
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False,
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, parallel=200, 
                           sample_weight=None):
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
         n_sequence, sequence_length, spatial_points = input_data.shape
+        self.forget = sequence_length - self.pred_horizon*self.rec_pred_steps - parallel
         # preprocessing of the input data
         if self.input_standardize:
             for i in range(input_data.shape[0]):
@@ -240,8 +244,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
             true_output = data_utils.roll_and_concat(
-                input_data[:, self.forget:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
-            true_output = true_output[:, :-self.pred_horizon*self.rec_pred_steps, :]
+                input_data[:, -self.pred_horizon*self.rec_pred_steps-parallel:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
+            true_output = true_output[:, :parallel, :]##
         else:
             # preprocessing of the output data
             if self.output_standardize:
@@ -265,19 +269,22 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
         true_output = true_output.reshape(-1, true_output.shape[-1])
-        pred_output = np.zeros((sequence_length - self.forget - self.pred_horizon*self.rec_pred_steps, spatial_points*self.pred_horizon*self.rec_pred_steps))
+        pred_output = np.zeros((parallel, spatial_points*self.pred_horizon*self.rec_pred_steps))##
         # print('self.forget = '+str(self.forget))
         # print('self.output_w.shape = '+str(self.output_w.shape))
-        input_data_temp = input_data[:, :sequence_length - self.pred_horizon*self.rec_pred_steps, :]
+        input_data_temp = input_data[:, :-self.pred_horizon*self.rec_pred_steps, :]##
         for i in tnrange(self.rec_pred_steps, desc='reservoir update'):
             # print('input_data_temp.shape = '+str(input_data_temp.shape))
             concat_states = self.iterate(input_data_temp).reshape(-1, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
-            # if i == 0:
-            #     concat_states = concat_states.reshape(parallel, 1, self.n_res+spatial_points)
-            # print('concat_states.shape = '+str(concat_states.shape))
             input_data_temp = self.output(concat_states)
             # print('input_data_temp = '+str(input_data_temp[:3,:4]))
+
+            # if i >= parallel:
+            #     j = i - parallel
+            #     pred_output[:, j*spatial_points:(j+1)*spatial_points] = input_data_temp
+
             pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp
+
         # print('pred_output = '+str(pred_output[:3, :4]))
         # print('true_output = '+str(true_output[:3, :4]))
         iterate_end = time.time()
@@ -293,6 +300,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
             
+        self.forget = self.forget__
         if detailed_score:
             rmse, rmse_vec = self.detailed_pred_score(pred_output, true_output, spatial_points)
             return pred_output, rmse, rmse_vec
@@ -651,6 +659,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 plt.title('Distribution of reservoir activations')
                 plt.xlabel('Activation value')
                 plt.show()
+        self.forget = self.forget__
+        self.parallel_runs = self.parallel_runs__
         return concat_states
 
     def train(self, concat_states, y):
@@ -734,15 +744,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
         length_input = pred_output.shape[0]
         rand = np.random.rand(pred_output_norm.shape[0], pred_output_norm.shape[1])*max(abs(true_data_norm.flatten()))
 
-        rmse = np.zeros((length_input, total_pred))
-        rmse_rand = np.zeros((length_input, total_pred))
+        rmse = np.zeros((length_input-1, total_pred-1))
+        rmse_rand = np.zeros((length_input-1, total_pred-1))
         for n_input in range(1, length_input):
             for n_pred in range(1, total_pred):
                 d1 = pred_output_norm[n_input, :n_pred*spatial_points]
                 d2 = true_data_norm[n_input, :n_pred*spatial_points]
                 d_rand = rand[n_input, :n_pred*spatial_points]
-                rmse[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
-                rmse_rand[n_input, n_pred] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d_rand.flatten() - d2.flatten())**2))
+                rmse[n_input-1, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
+                rmse_rand[n_input-1, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d_rand.flatten() - d2.flatten())**2))
         norm = np.mean(rmse_rand)
         rmse = rmse / norm
         rmse_vec = np.mean(rmse, axis=0)
