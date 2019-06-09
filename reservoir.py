@@ -300,7 +300,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         test_timer = test_end - iterate_end
         if self.verbose:
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
-        if self.verbose or self.gridsearch:
             print('Testing score: ' + str(score))
         self.forget = forget
         if detailed_score:
