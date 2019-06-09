@@ -527,7 +527,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 if self.random_projection == 'simulation':
                     self.state = act(
                         np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
-                        self.leak_rate * np.dot(self.res_w, self.encode_res(self.state.T).T) + 
+                        self.leak_rate * np.dot(self.res_w, self.encode_res(self.state)) +
                         (1 - self.leak_rate) * self.state + 
                         self.bias_vec)
                 elif self.random_projection == 'hyperdimensional':
