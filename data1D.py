@@ -75,7 +75,7 @@ def kuramoto_sivashinsky_from_dataset(sequence_length=10000, n_sequence=1):
     if sequence_length <= 10000:
         i_seq = random.randint(0, 100 - n_sequence)
         j_seq = random.randint(0, 10000 - sequence_length)
-        ks_data = np.load('KS_data/ks_data.npy')[range(i_seq, i_seq + n_sequence), j_seq:j_seq + sequence_length, :]
+        ks_data = np.load('1D_kuramoto_sivashinsky_datasets/ks_data.npy')[range(i_seq, i_seq + n_sequence), j_seq:j_seq + sequence_length, :]
     else:
         ks_data = np.zeros((n_sequence, sequence_length, spatial_points))
         n_concat = int(sequence_length / 10000)

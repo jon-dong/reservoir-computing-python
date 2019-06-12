@@ -656,7 +656,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         res_states = np.concatenate((np.abs(res_states) ** 2,
                                     np.angle(res_states, deg=False))) if state_iscomplex else res_states
 
-            # standardization of the reservoir
+        # standardization of the reservoir
         if self.res_standardize:
             for i in range(n_sequence):
                 preprocessing.scale(res_states[i, :, :], axis=0, copy=False)
