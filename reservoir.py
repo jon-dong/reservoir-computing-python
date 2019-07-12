@@ -55,6 +55,7 @@ import data_utils
 import scipy.io as sio
 from numpy import linalg as LA
 
+import ffht
 
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self,
@@ -398,6 +399,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                         self.res_w_im[i_batch * step:(i_batch+1) * step, j_batch * step:(j_batch+1) * step] = \
                             self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
                                                      size=(step, step*self.res_enc_dim))
+        elif self.random_projection == 'structured':
+            self.had_dim = int(2**np.ceil(np.log2(self.input_dim+self.n_res)))
+            self.diag1 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
+            self.diag2 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
+            self.diag3 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
 
     def reset_state(self):
         """ Resets the reservoir state, for new runs """
@@ -573,6 +579,21 @@ class Reservoir(BaseEstimator, RegressorMixin):
                         (1 - self.leak_rate) * self.state + 
                         self.bias_vec)
                     # print(self.state[:3])
+	            elif self.random_projection == 'structured':
+	                x = np.concatenate((self.res_scale * self.state / np.sqrt(self.n_res), 
+	                    self.input_scale * input_data[time_step, :].T / np.sqrt(self.input_dim), 
+	                    np.zeros(self.had_dim - self.n_res - self.input_dim, )))
+	                y1 = self.diag1 * x
+	                ffht.fht(np.squeeze(y1))
+	                y2 = self.diag2 * y1
+	                ffht.fht(np.squeeze(y2))
+	                y3 = self.diag3 * y2
+	                ffht.fht(np.squeeze(y3))
+	                y3 /= self.had_dim  # = np.sqrt(self.had_dim ** 3) / np.sqrt(self.had_dim)
+	                # the first factor comes from Hadamard normalization, the other from SORF normalization
+	                rand_proj = act(y3[:self.n_res])
+		            self.state = self.leak_rate * rand_proj + \
+		                         (1 - self.leak_rate) * self.state
                 elif self.random_projection == 'hyperdimensional':
                     # Remove the reservoir weights
                     previous_state = self.state
