@@ -491,6 +491,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.activation_param = 1
             def fun(x):
                 x = np.abs(x) ** 2
+                self.xx = x
                 return x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
             return fun
         elif self.activation_fun == 'intensity_in_tanh':
@@ -569,9 +570,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     ffht.fht(np.squeeze(y3))
                     y3 /= self.had_dim  # = np.sqrt(self.had_dim ** 3) / np.sqrt(self.had_dim)
                     # the first factor comes from Hadamard normalization, the other from SORF normalization
-                    rand_proj = act(y3[:, self.n_res])
-                    self.state[:, idx_sequence] = (self.leak_rate * rand_proj + \
-                                 (1 - self.leak_rate) * state.T).T
+                    # print(y3[:, :self.n_res].shape)
+                    rand_proj = act(np.squeeze(y3[:, :self.n_res]))
+                    self.state[:, idx_sequence] = ((1 - self.leak_rate) * rand_proj + self.leak_rate * state.T).T
                 elif self.random_projection == 'hyperdimensional':
                     # Remove the reservoir weights
                     previous_state = self.state
@@ -659,7 +660,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                 cam_data_matlab.size[::-1]).T)[self.cam_sampling_range] + self.leak_rate*self.state).reshape(-1, 1)
 
                 if time_step >= self.forget:
-                    res_states[idx_sequence, time_step - self.forget, :] = self.state.T
+                    res_states[idx_sequence, time_step - self.forget, :] = self.state[:, idx_sequence].T
             # print('mean_var_state = '+str(np.mean(var_state)))
             # print('var_var_state = '+str(np.var(var_state)))
         res_states = np.real_if_close(res_states)
