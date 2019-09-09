@@ -55,6 +55,7 @@ import data_utils
 import scipy.io as sio
 from numpy import linalg as LA
 import ffht
+from scipy.stats import chi
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
@@ -383,6 +384,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
             self.diag1 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
             self.diag2 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
             self.diag3 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
+        elif self.random_projection == 'fastfood':
+            self.had_dim = int(2 ** np.ceil(np.log2(self.input_dim + self.n_res)))
+            self.G = np.random.normal(size=(self.had_dim, 1))
+            self.B = np.random.choice([-1, 1], size=(self.had_dim, 1),
+                                      replace=True)
+            self.P = np.random.permutation(self.had_dim)
+            self.S = np.multiply(1 / np.sum(self.G ** 2)
+                                 .reshape((-1, 1)),
+                                 chi.rvs(self.had_dim,
+                                         size=(self.had_dim, 1)))
 
     def reset_state(self):
         """ Resets the reservoir state, for new runs """
@@ -570,6 +581,19 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     y3 /= self.had_dim  # = np.sqrt(self.had_dim ** 3) / np.sqrt(self.had_dim)
                     # the first factor comes from Hadamard normalization, the other from SORF normalization
                     rand_proj = act(y3[:, self.n_res])
+                    self.state[:, idx_sequence] = (self.leak_rate * rand_proj + \
+                                 (1 - self.leak_rate) * state.T).T
+                elif self.random_projection == 'fastfood':
+                    x = np.concatenate((self.res_scale * self.state / np.sqrt(self.n_res),
+                        self.input_scale * input_data[time_step, :].T / np.sqrt(self.input_dim),
+                        np.zeros(self.had_dim - self.n_res - self.input_dim, )))
+                    y1 = np.multiply(self.B, x[:, np.newaxis])
+                    ffht.fht(np.squeeze(y1))
+                    y2 = np.take(y1, self.P, mode='wrap')
+                    y3 = np.multiply(np.ravel(self.G), y2)
+                    ffht.fht(np.squeeze(y3))
+                    y3 = np.multiply(np.ravel(self.S), y3)
+                    rand_proj = act(y3[:self.n_res])
                     self.state[:, idx_sequence] = (self.leak_rate * rand_proj + \
                                  (1 - self.leak_rate) * state.T).T
                 elif self.random_projection == 'hyperdimensional':
