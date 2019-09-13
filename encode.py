@@ -87,7 +87,7 @@ def fixed_binary(mat, lower_bound=-0.5, higher_bound=0.5, binary_dim=12):
 
     enc_input_data = np.repeat(np.zeros(mat.shape), binary_dim, axis=-1)
     for i_binary in range(binary_dim):
-        enc_input_data[..., i_binary::binary_dim] = \
+        enc_input_data[i_binary::binary_dim,...] = \
             np.mod((normalized_mat - dither_vec[i_binary]) // step[i_binary], 2) == 0
     return enc_input_data
 
@@ -102,6 +102,6 @@ def bit_encoding(mat, lower_bound=-0.5, higher_bound=0.5, binary_dim=8):
     enc_input_data = np.repeat(np.zeros(mat.shape), binary_dim, axis=-1)
     for i_bit in range(binary_dim):
         enc_input_data[..., i_bit::binary_dim] = \
-            np.mod(np.floor(bit_mat / 2**i_bit), 2) == 1
+            np.mod(np.floor(bit_mat / 2**i_bit), 2)
     return enc_input_data
 

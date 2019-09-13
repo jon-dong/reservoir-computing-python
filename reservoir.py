@@ -60,20 +60,19 @@ import ffht
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self,
                  n_res=400, parallel_res=1, res_scale=1, res_encoding=None, res_enc_dim=1, res_enc_param=None,  # reservoir
-                 input_scale=1, input_dim=None, input_encoding=None, input_enc_dim=1, input_enc_param=None, input_shape=None,  # input
+                 input_scale=1, input_encoding=None, input_enc_dim=1, input_enc_param=None,  # input
                  input_standardize = False, res_standardize = False, output_standardize = False, # data standardization
                  scale_input_MinMax = False, scale_res_MinMax = False, scale_output_MinMax = False, # data standardization
-                 add_bias=True, bias_scale=1,  # bias
+                 bias_scale=1,  # bias
                  random_projection='simulation', weights_type='gaussian',  # weights
                  activation_fun='tanh', activation_param=None, leak_rate=1,  # dynamics
                  parallel_runs=None, forget=100,  # iterations
-                 future_pred=True, pred_horizon=10, rec_pred_steps=0,  # prediction
+                 future_pred=True, pred_horizon=1, rec_pred_steps=1,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
                  raw_input_feature = False, enc_input_feature = True, # concatenated states properties
                  cam_roi=None, cam_sampling_range=None, slm_size=None, matlab_eng=None, # SLM experiment
                  random_state=None, save=0, verbose=1,  # misc
-                 N_0=1, N_1=1, time_change=None, change_type='tanh',  # dynamic activation function options
-                 gridsearch=False, # see if we're doing gridsearch
+                 gridsearch=False
                  ):
         self.n_res = n_res
         self.res_scale = res_scale
@@ -84,7 +83,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.input_encoding = input_encoding
         self.input_enc_dim = input_enc_dim
         self.input_enc_param = input_enc_param
-        self.add_bias = add_bias
         self.bias_scale = bias_scale
         self.random_projection = random_projection
         self.weights_type = weights_type
@@ -116,13 +114,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.verbose = verbose
         self.cam_roi = cam_roi
         self.slm_size = slm_size
-
-
-        self.N_0 = N_0
-        self.N_1 = N_1
-        self.time_change = time_change
-        self.change_type = change_type
-        self.input_shape = input_shape
 
         self.input_dim = None
         self.input_w = None
@@ -165,8 +156,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.scale_input_MinMax:
             input_data = data_utils.scale(input_data, self.scale_input_MinMax)
         
-        if self.input_dim is None:
-            self.input_dim = input_data.shape[-1]
+        self.input_dim = input_data.shape[-1]
         start = time.time()
         if self.verbose:
             print('Reservoir Computing algorithm - Training phase:\n')
@@ -285,7 +275,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             #     j = i - parallel
             #     pred_output[:, j*spatial_points:(j+1)*spatial_points] = input_data_temp
 
-            pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp
+            pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp.reshape((-1, spatial_points))
 
         # print('pred_output = '+str(pred_output[:3, :4]))
         # print('true_output = '+str(true_output[:3, :4]))
@@ -322,7 +312,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         total_input_dim = self.input_dim * self.input_enc_dim
         total_res_dim = self.n_res * self.res_enc_dim
         if self.random_projection == 'simulation':
-            self.bias_vec = self.add_bias*self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
+            self.bias_vec = self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
             if self.weights_type == 'gaussian':
                 self.input_w = self.random_state.normal(loc=0., scale=self.input_scale / np.sqrt(total_input_dim),
                                                         size=(self.n_res, total_input_dim))
@@ -338,7 +328,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.res_w += self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
                                                     size=(self.n_res, total_res_dim))
         elif self.random_projection == 'out of core':
-            self.bias_vec = self.add_bias*self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
+            self.bias_vec = self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
             n_batch = 2
             step = int(self.n_res / n_batch)
             if self.weights_type == 'gaussian':
@@ -405,6 +395,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.input_enc_param = [-0.5, 0.5, 0.5]
             return encode.local_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
                                        higher_bound=self.input_enc_param[1], step=self.input_enc_param[2])
+        elif self.input_encoding == 'bit encoding':
+            if self.input_enc_param is None:
+                self.input_enc_param = [-0.5, 0.5]
+            return encode.bit_encoding(mat, lower_bound=self.input_enc_param[0], higher_bound=self.input_enc_param[1],
+                                       binary_dim=self.input_enc_dim)
         elif self.input_encoding == 'phase':
             if self.input_enc_param is None:
                 self.input_enc_param = np.pi
@@ -451,6 +446,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.res_enc_param = [-0.5, 0.5, 0.5]
             return encode.local_binary(mat.T, binary_dim=self.res_enc_dim, lower_bound=self.res_enc_param[0],
                                        higher_bound=self.res_enc_param[1], step=self.res_enc_param[2]).T
+        elif self.input_encoding == 'bit encoding':
+            if self.input_enc_param is None:
+                self.input_enc_param = [-0.5, 0.5]
+            return encode.bit_encoding(mat.T, lower_bound=self.input_enc_param[0], higher_bound=self.input_enc_param[1],
+                                       binary_dim=self.input_enc_dim).T
         elif self.res_encoding == 'fixed binary':
             if self.input_enc_param is None:
                 self.input_enc_param = [0, 1]
