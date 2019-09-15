@@ -64,6 +64,7 @@ def kuramoto_sivashinsky_matlab(sequence_length=1000, n_sequence=1, spatial_poin
         # [xx[idx], input_data[idx,:,:]] = matlab_eng.ksfm2real(fdata, L, nargout=2)
         xx[idx] = scipy.io.loadmat('xx.mat')['xx']
         input_data[idx,:,:] = scipy.io.loadmat('ii.mat')['ii']
+    matlab_eng.quit()
     # we remove first time and spatial indices because sometimes they get bad values
     input_data = input_data[:,1:,1:]
     tt = np.linspace(np.min(tt[:, :, :-1]), np.max(tt[:, :, :-1]), sequence_length)
@@ -75,7 +76,7 @@ def kuramoto_sivashinsky_from_dataset(sequence_length=10000, n_sequence=1):
     if sequence_length <= 10000:
         i_seq = random.randint(0, 100 - n_sequence)
         j_seq = random.randint(0, 10000 - sequence_length)
-        ks_data = np.load('1D_kuramoto_sivashinsky_datasets/1D_kuramoto_sivashinsky_datasets.npy')[range(i_seq, i_seq + n_sequence), j_seq:j_seq + sequence_length, :]
+        ks_data = np.load('1D_kuramoto_sivashinsky_datasets/ks_data.npy')[range(i_seq, i_seq + n_sequence), j_seq:j_seq + sequence_length, :]
     else:
         ks_data = np.zeros((n_sequence, sequence_length, spatial_points))
         n_concat = int(sequence_length / 10000)

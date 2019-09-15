@@ -24,7 +24,7 @@ def binary_threshold(mat, threshold):
 def naive_binary(mat, lower_bound=-0.5, higher_bound=0.5, binary_dim=10):
     """ We generate a binary vector using a series of equally-spaced thresholds """
     if mat.ndim == 1:  # If the matrix is a vector
-        mat = mat[..., np.newaxis]  # Transform into a matrix
+        mat = mat[np.newaxis, ...]  # Transform into a matrix
     step = (higher_bound - lower_bound) / binary_dim
 
     enc_input_data = np.repeat(np.zeros(mat.shape), binary_dim, axis=-1)
