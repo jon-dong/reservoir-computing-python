@@ -107,3 +107,20 @@ def get_kuramoto_sivashinsky_lyap_exp(sequence_length=1000, n_sequence = 100, sp
     lyap_exp = np.polyfit(range(len(spectrum)), spectrum, 1)[0]/h
 
     return lyap_exp
+
+
+def scale(array, min_max, in_place=False):
+    if in_place:
+        a = array.min(axis=(-1, -2))
+        b = array.max(axis=(-1, -2))
+        array = np.transpose(array, axes=(1, 2, 0))
+        array -= a
+        array /= b - a
+        array *= min_max[1] - min_max[0]
+        array += min_max[0]
+        array = np.transpose(array, axes=(2, 0, 1))
+
+    else:
+        a = array.min(axis=(-1, -2))
+        b = array.max(axis=(-1, -2))
+        return (min_max[0] + (min_max[1] - min_max[0]) * (array.T - a) / (b - a)).T

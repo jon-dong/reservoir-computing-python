@@ -54,26 +54,26 @@ import encode
 import data_utils
 import scipy.io as sio
 from numpy import linalg as LA
+import ffht
+from scipy.stats import chi
 
 
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self,
                  n_res=400, parallel_res=1, res_scale=1, res_encoding=None, res_enc_dim=1, res_enc_param=None,  # reservoir
-                 input_scale=1, input_dim=None, input_encoding=None, input_enc_dim=1, input_enc_param=None, input_shape=None,  # input
+                 input_scale=1, input_encoding=None, input_enc_dim=1, input_enc_param=None,  # input
                  input_standardize = False, res_standardize = False, output_standardize = False, # data standardization
                  scale_input_MinMax = False, scale_res_MinMax = False, scale_output_MinMax = False, # data standardization
-                 add_bias=True, bias_scale=1,  # bias
+                 bias_scale=1,  # bias
                  random_projection='simulation', weights_type='gaussian',  # weights
                  activation_fun='tanh', activation_param=None, leak_rate=1,  # dynamics
                  parallel_runs=None, forget=100,  # iterations
-                 future_pred=True, pred_horizon=10, rec_pred_steps=0,  # prediction
+                 future_pred=True, pred_horizon=1, rec_pred_steps=1,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
                  raw_input_feature = False, enc_input_feature = True, # concatenated states properties
                  cam_roi=None, cam_sampling_range=None, slm_size=None, matlab_eng=None, # SLM experiment
                  random_state=None, save=0, verbose=1,  # misc
-                 N_0=1, N_1=1, time_change=None, change_type='tanh',  # dynamic activation function options
-                 gridsearch=False, # see if we're doing gridsearch
-                 k=3, rho=0.6, l=6
+                 gridsearch=False
                  ):
         self.n_res = n_res
         self.res_scale = res_scale
@@ -84,7 +84,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.input_encoding = input_encoding
         self.input_enc_dim = input_enc_dim
         self.input_enc_param = input_enc_param
-        self.add_bias = add_bias
         self.bias_scale = bias_scale
         self.random_projection = random_projection
         self.weights_type = weights_type
@@ -92,10 +91,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.activation_param = activation_param
         self.leak_rate = leak_rate
         self.parallel_runs = parallel_runs if parallel_runs is not None else 1
-        self.parallel_runs__ = self.parallel_runs
         self.parallel_res = parallel_res
         self.forget = forget
-        self.forget__ = forget
         self.future_pred = future_pred
         self.pred_horizon = pred_horizon
         self.rec_pred_steps = rec_pred_steps
@@ -107,9 +104,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.scale_res_MinMax = scale_res_MinMax 
         self.scale_output_MinMax = scale_output_MinMax
         self.gridsearch = gridsearch
-        self.k = k
-        self.rho = rho
-        self.l = l
 
         self.train_param = train_param
         self.random_state = random_state
@@ -119,13 +113,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.verbose = verbose
         self.cam_roi = cam_roi
         self.slm_size = slm_size
-
-
-        self.N_0 = N_0
-        self.N_1 = N_1
-        self.time_change = time_change
-        self.change_type = change_type
-        self.input_shape = input_shape
 
         self.input_dim = None
         self.input_w = None
@@ -166,10 +153,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
             for i in range(input_data.shape[0]):
                 preprocessing.scale(input_data[i, :, :], axis=0, copy=False)
         if self.scale_input_MinMax:
-            encode.scale(input_data, self.scale_input_MinMax, in_place=True)
+            input_data = data_utils.scale(input_data, self.scale_input_MinMax)
         
-        if self.input_dim is None:
-            self.input_dim = input_data.shape[-1]
+        self.input_dim = input_data.shape[-1]
         start = time.time()
         if self.verbose:
             print('Reservoir Computing algorithm - Training phase:\n')
@@ -183,7 +169,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 for i in range(true_output.shape[0]):
                     preprocessing.scale(true_output[i, :, :], axis=0, copy=False)
             if self.scale_output_MinMax:
-                encode.scale(true_output, self.scale_output_MinMax, in_place=True)
+                data_utils.scale(true_output, self.scale_output_MinMax, in_place=True)
 
             if true_output.shape[-1] == self.input_dim and self.pred_horizon != 1:
                 true_output = data_utils.roll_and_concat(true_output, roll_num=self.pred_horizon)
@@ -197,17 +183,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Initialization complete. \t\tElapsed time: ' + str(self.init_timer) + ' s')
         
         concat_states = self.iterate(input_data)
+        self.c = concat_states
 
         iterate_end = time.time()
         self.iterate_timer = iterate_end - init_end
         if self.verbose:
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(self.iterate_timer) + ' s')
-        if self.random_projection == 'PRL' and self.l != 0:
-            true_output = true_output[:, self.forget:, self.l:-self.l]
-            print('true_output.shape = '+str(true_output.shape))
-        else:
-            true_output = true_output[:, self.forget:, :]
-        print(concat_states.shape)
+        true_output = true_output[:, self.forget:, :]
+        # print('concat_states.shape_ = '+str(concat_states))
+        # print('true_output.shape_ = '+str(true_output))
         self.output_w = self.train(concat_states, true_output)
 
         pred_output = self.output(concat_states)
@@ -235,39 +219,34 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
         return self.predict_and_score(input_data, true_output, only_score=True)
 
-    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, parallel=200, 
-                          sample_weight=None):
+    def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None):
+        total_pred_steps = self.pred_horizon*self.rec_pred_steps
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
         n_sequence, sequence_length, spatial_points = input_data.shape
-        self.forget = sequence_length - self.pred_horizon*self.rec_pred_steps - parallel
         # preprocessing of the input data
         if self.input_standardize:
             for i in range(input_data.shape[0]):
                 preprocessing.scale(input_data[i, :, :], axis=0, copy=False)
         if self.scale_input_MinMax:
-            encode.scale(input_data, self.scale_input_MinMax, in_place=True)
+            input_data = data_utils.scale(input_data, self.scale_input_MinMax)
 
         # If reservoir is in prediction mode, generate the output
         if self.future_pred and true_output is None:
-            if self.random_projection == 'PRL' and self.l != 0:
-                true_output = data_utils.roll_and_concat(
-                    input_data[:, -self.pred_horizon*self.rec_pred_steps-parallel:, self.l:-self.l], roll_num=self.pred_horizon*self.rec_pred_steps)
-            else:
-                true_output = data_utils.roll_and_concat(
-                    input_data[:, -self.pred_horizon*self.rec_pred_steps-parallel:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
-            true_output = true_output[:, :parallel, :]##
+            true_output = data_utils.roll_and_concat(
+                input_data[:, self.forget:, :], roll_num=total_pred_steps)
+            true_output = true_output[:, :-total_pred_steps, :]##
         else:
             # preprocessing of the output data
             if self.output_standardize:
                 for i in range(true_output.shape[0]):
                     preprocessing.scale(true_output[i, :, :], axis=0, copy=False)
             if self.scale_output_MinMax:
-                encode.scale(true_output, self.scale_output_MinMax, in_place=True)
-            if true_output.shape[-1] == self.input_dim and self.pred_horizon*self.rec_pred_steps != 1:
+                data_utils.scale(true_output, self.scale_output_MinMax, in_place=True)
+            if true_output.shape[-1] == self.input_dim and total_pred_steps != 1:
                 true_output = data_utils.roll_and_concat(
-                    true_output[:, self.forget:, :], roll_num=self.pred_horizon*self.rec_pred_steps)
-                true_output = true_output[:, :-self.pred_horizon * self.rec_pred_steps, :]
+                    true_output[:, self.forget:, :], roll_num=total_pred_steps)
+                true_output = true_output[:, :-total_pred_steps, :]
 
         # Use Reservoir to predict the output
         start = time.time()
@@ -280,36 +259,27 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
         true_output = true_output.reshape(-1, true_output.shape[-1])
-        if self.random_projection == 'PRL' and self.l != 0:
-            spatial_points = spatial_points - 2 * self.l
-        pred_output = np.zeros((parallel, spatial_points*self.pred_horizon*self.rec_pred_steps))##
+        pred_output = np.zeros((sequence_length-self.forget-total_pred_steps, spatial_points*total_pred_steps))##
         # print('self.forget = '+str(self.forget))
         # print('self.output_w.shape = '+str(self.output_w.shape))
-        input_data_temp = input_data[:, :-self.pred_horizon*self.rec_pred_steps, :]##
-        if self.random_projection == 'PRL':
-            for i in tnrange(self.rec_pred_steps, desc='reservoir update'):
-                # print('input_data_temp.shape = '+str(input_data_temp.shape))
-                concat_states = self.iterate(input_data_temp).reshape(-1, self.n_res*2)  # refreshing the concat states for each prediction step
-                input_data_temp = self.output(concat_states)
+        input_data_temp = input_data[:, :-total_pred_steps, :]##
+        for i in tnrange(self.rec_pred_steps, desc='reservoir update'):
+            # print('input_data_temp.shape = '+str(input_data_temp.shape))
+            concat_states = self.iterate(input_data_temp).reshape(-1, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
+            input_data_temp = self.output(concat_states)
+            # print('input_data_temp = '+str(input_data_temp[:3,:4]))
 
-                pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp
-        else:
-            for i in tnrange(self.rec_pred_steps, desc='reservoir update'):
-                # print('input_data_temp.shape = '+str(input_data_temp.shape))
-                concat_states = self.iterate(input_data_temp).reshape(-1, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
-                input_data_temp = self.output(concat_states)
-                # print('input_data_temp = '+str(input_data_temp[:3,:4]))
+            # if i >= parallel:
+            #     j = i - parallel
+            #     pred_output[:, j*spatial_points:(j+1)*spatial_points] = input_data_temp
 
-                # if i >= parallel:
-                #     j = i - parallel
-                #     pred_output[:, j*spatial_points:(j+1)*spatial_points] = input_data_temp
-
-                pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp
+            pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp.reshape((-1, spatial_points))
 
         # print('pred_output = '+str(pred_output[:3, :4]))
         # print('true_output = '+str(true_output[:3, :4]))
         iterate_end = time.time()
         iterate_timer = iterate_end - init_end
+        print('true_output.shape = '+str(true_output.shape))
         if self.verbose:
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
 
@@ -321,8 +291,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
             
-        self.forget = self.forget__
         if detailed_score:
+            # print('__________'+str(pred_output[0,:]))
+            # print(true_output)
             rmse, rmse_vec, rmse_vert = self.detailed_pred_score(pred_output, true_output, spatial_points)
             return pred_output, rmse, rmse_vec, rmse_vert
         elif only_score:
@@ -338,7 +309,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         total_input_dim = self.input_dim * self.input_enc_dim
         total_res_dim = self.n_res * self.res_enc_dim
         if self.random_projection == 'simulation':
-            self.bias_vec = self.add_bias*self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
+            self.bias_vec = self.random_state.normal(loc=0., scale=self.bias_scale, size=(1, self.n_res))
             if self.weights_type == 'gaussian':
                 self.input_w = self.random_state.normal(loc=0., scale=self.input_scale / np.sqrt(total_input_dim),
                                                         size=(self.n_res, total_input_dim))
@@ -353,18 +324,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                                         size=(self.n_res, total_res_dim))
                 self.res_w += self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
                                                     size=(self.n_res, total_res_dim))
-        elif self.random_projection == 'PRL':
-            self.input_w = self.random_state.uniform(low=-self.input_scale / np.sqrt(total_input_dim), high=self.input_scale / np.sqrt(total_input_dim),
-                                                        size=(self.n_res, total_input_dim))
-            self.res_w = self.random_state.uniform(low=-self.res_scale / np.sqrt(total_res_dim), high=self.res_scale / np.sqrt(total_res_dim),
-                                                    size=(self.n_res, total_res_dim))
-            k = self.k * self.n_res
-            erdos_fix = np.array([1] * k + [0] * (self.n_res ** 2 - k))
-            np.random.shuffle(erdos_fix)
-            self.res_w = np.dot(self.res_w, erdos_fix.reshape(self.n_res, self.n_res))
-            self.res_w = np.real(self.res_w / np.real(np.max(LA.eig(self.res_w)[0])) * self.rho)
         elif self.random_projection == 'out of core':
-            self.bias_vec = self.add_bias*self.random_state.normal(loc=0., scale=self.bias_scale, size=(self.n_res, 1))
+            self.bias_vec = self.random_state.normal(loc=0., scale=self.bias_scale, size=(1, self.n_res))
             n_batch = 2
             step = int(self.n_res / n_batch)
             if self.weights_type == 'gaussian':
@@ -389,7 +350,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                           shape=(self.n_res, total_res_dim))
                 self.res_w_im = np.memmap('data/res_w_im.dat', dtype='float32', mode='w+',
                                           shape=(self.n_res, total_res_dim))
-
                 for i_batch in range(n_batch):
                     self.input_w_re[i_batch * step:(i_batch+1) * step] = \
                         self.random_state.normal(loc=0., scale=self.input_scale/np.sqrt(total_input_dim),
@@ -405,91 +365,89 @@ class Reservoir(BaseEstimator, RegressorMixin):
                             self.random_state.normal(loc=0., scale=self.res_scale / np.sqrt(total_res_dim),
                                                      size=(step, step*self.res_enc_dim))
 
+        elif self.random_projection == 'structured':
+            self.had_dim = int(2**np.ceil(np.log2(self.input_dim+self.n_res)))
+            self.diag1 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
+            self.diag2 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
+            self.diag3 = 2 * np.random.randint(0, 2, size=(self.had_dim,)) - 1
+        elif self.random_projection == 'fastfood':
+            self.had_dim = int(2 ** np.ceil(np.log2(self.input_dim + self.n_res)))
+            self.G = np.random.normal(size=(self.had_dim, 1))
+            self.B = np.random.choice([-1, 1], size=(self.had_dim, 1),
+                                      replace=True)
+            self.P = np.random.permutation(self.had_dim)
+            self.S = np.multiply(1 / np.sum(self.G ** 2)
+                                 .reshape((-1, 1)),
+                                 chi.rvs(self.had_dim,
+                                         size=(self.had_dim, 1)))
+
     def reset_state(self):
         """ Resets the reservoir state, for new runs """
         # To-do: add different statistics
-        self.state = self.random_state.normal(loc=0., scale=1, size=(self.n_res, self.parallel_runs))
+        self.state = self.random_state.normal(loc=0., scale=1, size=(self.parallel_runs, self.n_res))
 
-    def encode_input(self, mat):
-        """ Encodes the input of the reservoir """
-        if self.input_encoding == 'threshold':
-            if self.input_enc_param is None:
-                self.input_enc_param = 25
-            return encode.binary_threshold(mat, self.input_enc_param)
-        elif self.input_encoding == 'naive binary':
-            if self.input_enc_param is None:
-                self.input_enc_param = [-0.5, 0.5]
-            return encode.naive_binary(mat, binary_dim=self.input_enc_dim,
-                                       lower_bound=self.input_enc_param[0], higher_bound=self.input_enc_param[1])
-        elif self.input_encoding == 'local binary':
-            if self.input_enc_param is None:
-                self.input_enc_param = [-0.5, 0.5, 0.5]
-            return encode.local_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
-                                       higher_bound=self.input_enc_param[1], step=self.input_enc_param[2])
-        elif self.input_encoding == 'phase':
-            if self.input_enc_param is None:
-                self.input_enc_param = np.pi
-            return encode.phase_encoding(mat, scaling_factor=self.input_enc_param, n_levels=255)
-        elif self.input_encoding == 'meadowlark slm':
-            if self.input_enc_param is None:
-                self.input_enc_param = int(256/2)
-            return encode.slm_encoding(mat, scaling_factor=self.input_enc_param, n_levels=int(256/2))
-        elif self.input_encoding == 'fixed binary':
-            if self.input_enc_param is None:
-                self.input_enc_param = [0, 1]
-            return encode.fixed_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
-                                       higher_bound=self.input_enc_param[1])
-        elif self.input_encoding == 'large bin binary':
-            if self.input_enc_param is None:
-                self.input_enc_param = [-0.5, 0.5, 0.25, False]
-            return encode.large_bin_binary(mat, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
-                                           higher_bound=self.input_enc_param[1], gamma=self.input_enc_param[2],
-                                           balanced=self.input_enc_param[3])
-        elif self.input_encoding is None:
-            return mat
+    def encode(self, mat, target=None):
+        """ Encodes the input or the reservoir """
+        if target is None:
+            raise ValueError("The encoded data type is not defined, e.g. type='res' or type='input'")
+        elif target == "input":
+            encoding_type = self.input_encoding
+            enc_param = self.input_enc_param
+            enc_dim = self.input_enc_dim
+        elif target == "res":
+            encoding_type = self.res_encoding
+            enc_param = self.res_enc_param
+            enc_dim = self.res_enc_dim
+        else:
+            raise ValueError("Unknown target is defined")
 
-    def encode_res(self, mat):
-        """ Encodes the input of the reservoir """
-        if self.res_encoding == 'threshold':
-            if self.res_enc_param is None:
-                self.res_enc_param = 25
-            return encode.binary_threshold(mat, self.res_enc_param)
-        elif self.res_encoding == 'phase':
-            if self.res_enc_param is None:
-                self.res_enc_param = np.pi
-            return encode.phase_encoding(mat, scaling_factor=self.res_enc_param)
-        elif self.res_encoding == 'meadowlark slm':
-            if self.res_enc_param is None:
-                self.res_enc_param = int(256/2)
-            return encode.slm_encoding(mat, scaling_factor=self.res_enc_param, n_levels=int(256/2))
-        elif self.res_encoding == 'naive binary':
-            if self.res_enc_param is None:
-                self.res_enc_param = [-0.5, 0.5]
-            return encode.naive_binary(mat.T, binary_dim=self.res_enc_dim,
-                                       lower_bound=self.res_enc_param[0], higher_bound=self.res_enc_param[1]).T
-        elif self.res_encoding == 'local binary':
-            if self.res_enc_param is None:
-                self.res_enc_param = [-0.5, 0.5, 0.5]
-            return encode.local_binary(mat.T, binary_dim=self.res_enc_dim, lower_bound=self.res_enc_param[0],
-                                       higher_bound=self.res_enc_param[1], step=self.res_enc_param[2]).T
-        elif self.res_encoding == 'fixed binary':
-            if self.input_enc_param is None:
-                self.input_enc_param = [0, 1]
-            return encode.fixed_binary(mat.T, binary_dim=self.input_enc_dim, lower_bound=self.input_enc_param[0],
-                                       higher_bound=self.input_enc_param[1]).T
-        elif self.res_encoding == 'large bin binary':
-            if self.res_enc_param is None:
-                self.res_enc_param = [0, 1, 0.25, False]
-            return encode.large_bin_binary(mat.T, binary_dim=self.res_enc_dim, lower_bound=self.res_enc_param[0],
-                                           higher_bound=self.res_enc_param[1], gamma=self.res_enc_param[2],
-                                           balanced=self.res_enc_param[3]).T
-        elif self.res_encoding is None:
+        if encoding_type == 'threshold':
+            if enc_param is None:
+                enc_param = 25
+            return encode.binary_threshold(mat, enc_param)
+        elif encoding_type == 'naive binary':
+            if enc_param is None:
+                enc_param = [-0.5, 0.5]
+            return encode.naive_binary(mat, binary_dim=enc_dim,
+                                       lower_bound=enc_param[0], higher_bound=enc_param[1])
+        elif encoding_type == 'local binary':
+            if enc_param is None:
+                enc_param = [-0.5, 0.5, 0.5]
+            return encode.local_binary(mat, binary_dim=enc_dim, lower_bound=enc_param[0],
+                                       higher_bound=enc_param[1], step=enc_param[2])
+        elif encoding_type == 'bit encoding':
+            if enc_param is None:
+                enc_param = [-0.5, 0.5]
+            return encode.bit_encoding(mat, lower_bound=enc_param[0], higher_bound=enc_param[1],
+                                       binary_dim=enc_dim)
+        elif encoding_type == 'phase':
+            if enc_param is None:
+                enc_param = np.pi
+            return encode.phase_encoding(mat, scaling_factor=enc_param, n_levels=255)
+        elif encoding_type == 'meadowlark slm':
+            if enc_param is None:
+                enc_param = int(256)
+            return encode.slm_encoding(mat, scaling_factor=enc_param, n_levels=int(256/2))
+        elif encoding_type == 'fixed binary':
+            if enc_param is None:
+                enc_param = [0, 1]
+            return encode.fixed_binary(mat, binary_dim=enc_dim, lower_bound=enc_param[0],
+                                       higher_bound=enc_param[1])
+        elif encoding_type == 'large bin binary':
+            if enc_param is None:
+                enc_param = [-0.5, 0.5, 0.25, False]
+            return encode.large_bin_binary(mat, binary_dim=enc_dim, lower_bound=enc_param[0],
+                                           higher_bound=enc_param[1], gamma=enc_param[2],
+                                           balanced=enc_param[3])
+        elif encoding_type is None:
             return mat
 
     def activation(self):
         """ Activation function for reservoir iterations """
         if self.activation_fun == 'tanh':
             return lambda x: np.tanh(x)
+        elif self.activation_fun == 'complex tanh':
+            return lambda x: np.tanh(np.abs(x)**2)
         elif self.activation_fun == 'phase':
             return lambda x: np.exp(1j * x / np.amax(np.abs(x)) * self.activation_param)
         elif self.activation_fun == 'abs phase':
@@ -509,9 +467,21 @@ class Reservoir(BaseEstimator, RegressorMixin):
             if self.activation_param is None:
                 self.activation_param = 1
             def fun(x):
+                x = np.abs(x) ** 2
+                # self.xx = x
+                return x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
+            return fun
+        elif self.activation_fun == 'intensity_in_tanh':
+            if self.activation_param is None:
+                self.activation_param = 1
+            def fun(x):
                 x = np.array(np.abs(x) ** 2)
-                return x * (x < self.activation_param) + self.activation_param * (x > self.activation_param)
-            return fun  # lambda x: np.abs(x) ** 2
+                x = x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
+                x = 1 + np.tanh(data_utils.scale(x, (-3, 0)))
+                # x = np.array(data_utils.scale(x**2, [np.amin(0), np.amax(x)]))
+                self.xx = x
+                return x
+            return fun
         else:  # in this last case, we allow external definition of the activation function
             return self.activation_fun
 
@@ -519,18 +489,18 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Iterates the reservoir and return all the successive reservoir states """
         if len(raw_input_data.shape) == 2:
             # if input data is 2D (previous pred_output) means it is in refreshing phase
-            input_data = self.encode_input(raw_input_data.reshape((raw_input_data.shape[0], 1, raw_input_data.shape[1])))
-            input_w_prl = self.input_w
-            if self.random_projection == 'PRL' and self.input_w.shape[1] != raw_input_data.shape[1] and self.l != 0:
-                input_w_prl = self.input_w[:, self.l:-self.l]
-            self.forget = 0
-            self.parallel_runs = input_data.shape[0]
+            raw_input_data = raw_input_data.reshape((raw_input_data.shape[0], 1, raw_input_data.shape[1]))
+            input_data = self.encode(raw_input_data, target='input')
+            forget = 0
+            parallel_runs = 1 if self.random_projection == 'structured' else input_data.shape[0]
+            # print('input_data.shape = '+str(input_data.shape))
         else:
-            input_w_prl = self.input_w
-            input_data = self.encode_input(raw_input_data)
+            input_data = self.encode(raw_input_data, target='input')
+            forget = self.forget
+            parallel_runs = self.parallel_runs
         n_sequence, sequence_length, input_dim = input_data.shape
         act = self.activation()
-        res_states = np.zeros((n_sequence, sequence_length - self.forget, self.n_res), dtype=np.complex64)
+        res_states = np.zeros((n_sequence, sequence_length - forget, self.n_res), dtype=np.complex64)
 
         # Initialize hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
@@ -551,34 +521,59 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.matlab_eng.open_maitai(nargout=0)
                 self.matlab_eng.open_camera(nargout=0)
 
-        for i_sequence in range(int(n_sequence / self.parallel_runs)):
-            idx_sequence = np.arange(i_sequence * self.parallel_runs, (i_sequence + 1) * self.parallel_runs)
+        for i_sequence in range(int(n_sequence / parallel_runs)):
+            idx_sequence = np.arange(i_sequence * parallel_runs, (i_sequence + 1) * parallel_runs)
             if self.verbose and sequence_length>1:
                 time_iterable = tqdm_notebook(range(sequence_length), file=sys.stdout,  desc='reservoir construction')
             else:
                 time_iterable = range(sequence_length)
+            # var_state = np.zeros(sequence_length)
             for time_step in time_iterable:
                 if self.random_projection == 'simulation':
                     self.state = act(
-                        np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
-                        self.leak_rate * np.dot(self.res_w, self.encode_res(self.state)) +
-                        (1 - self.leak_rate) * self.state + 
-                        self.bias_vec)
-                elif self.random_projection == 'PRL':
-                    self.state = act(
-                        np.dot(input_w_prl, input_data[idx_sequence, time_step, :].T) +
-                        self.leak_rate * np.dot(self.res_w, self.encode_res(self.state.T).T) + 
-                        (1 - self.leak_rate) * self.state)
+                        (1 - self.leak_rate) * (np.dot(input_data[idx_sequence, time_step, :], self.input_w.T) +
+                        np.dot(self.encode(self.state, target='res'), self.res_w.T)) + self.leak_rate * self.state + self.bias_vec)
+                elif self.random_projection == 'structured':
+                    # print((self.res_scale * self.state / np.sqrt(self.n_res)).shape)
+                    # print((self.input_scale * input_data[idx_sequence, time_step, :].reshape((parallel_runs, -1)).T / np.sqrt(self.input_dim)).shape)
+                    # print((np.zeros((self.had_dim - self.n_res - self.input_dim, parallel_runs))).shape)
+                    state = self.state[idx_sequence, :]
+                    x = np.concatenate((self.res_scale * state / np.sqrt(self.n_res),
+                                        self.input_scale * input_data[idx_sequence, time_step, :].reshape((parallel_runs, -1)) / np.sqrt(self.input_dim),
+                                        np.zeros((parallel_runs, self.had_dim - self.n_res - self.input_dim))), axis=-1)
+                    y1 = self.diag1*(x)
+                    ffht.fht(np.squeeze(y1))
+                    y2 = self.diag2 * y1
+                    ffht.fht(np.squeeze(y2))
+                    y3 = self.diag3 * y2
+                    ffht.fht(np.squeeze(y3))
+                    y3 /= self.had_dim  # = np.sqrt(self.had_dim ** 3) / np.sqrt(self.had_dim)
+                    # the first factor comes from Hadamard normalization, the other from SORF normalization
+                    rand_proj = act(y3[:, self.n_res])
+                    self.state[idx_sequence, :] = ((1-self.leak_rate) * rand_proj + self.leak_rate * state.T).T
+                elif self.random_projection == 'fastfood':
+                    x = np.concatenate((self.res_scale * self.state / np.sqrt(self.n_res),
+                        self.input_scale * input_data[time_step, :].T / np.sqrt(self.input_dim),
+                        np.zeros(self.had_dim - self.n_res - self.input_dim, )))
+                    y1 = np.multiply(self.B, x[:, np.newaxis])
+                    ffht.fht(np.squeeze(y1))
+                    y2 = np.take(y1, self.P, mode='wrap')
+                    y3 = np.multiply(np.ravel(self.G), y2)
+                    ffht.fht(np.squeeze(y3))
+                    y3 = np.multiply(np.ravel(self.S), y3)
+                    rand_proj = act(y3[:self.n_res])
+                    self.state[:, idx_sequence] = (self.leak_rate * rand_proj + \
+                                 (1 - self.leak_rate) * state.T).T
                 elif self.random_projection == 'hyperdimensional':
                     # Remove the reservoir weights
                     previous_state = self.state
-                    self.state = self.encode_res(self.state)
+                    self.state = self.encode(self.state, target='res')
                     self.state = self.leak_rate * act(np.dot(self.input_w, input_data[idx_sequence, time_step, :].T) +
                                     + self.bias_vec)+ \
                                  (1 - self.leak_rate) * np.roll(previous_state, 1, axis=0)
                 elif self.random_projection == 'lighton opu':
                     # Create image from self.state and input_data
-                    state_img = self.encode_res(self.state).astype(np.uint8)
+                    state_img = self.encode(self.state, target='res').astype(np.uint8)
 
                     # if any(self.state.flatten() > 35):
                     #     state_img = (self.state > 35).astype(np.uint8)
@@ -633,9 +628,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.img_cam = cam_img
                     plt.show()
                 elif self.random_projection == 'meadowlark slm':
-                    self.state = self.encode_res(self.state)
-                    slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
-                    if self.parallel_runs==1:
+                    self.state = self.encode(self.state, target='res')
+                    if parallel_runs==1 and input_data.shape[0] == 1:
+                        slm_imgs = self.generate_slm_imgs(input_data[idx_sequence, time_step, :], self.state)
                         adict = {}
                         adict['phase_vec'] = np.array(slm_imgs[0,:], dtype='uint8') # since SLM is 8bit
                         sio.savemat('phase_vec.mat', adict)
@@ -644,37 +639,48 @@ class Reservoir(BaseEstimator, RegressorMixin):
                         self.state = ((1-self.leak_rate)*np.ravel(np.array(cam_data_matlab._data).reshape(
                             cam_data_matlab.size[::-1]).T)[self.cam_sampling_range] + self.leak_rate*self.state).reshape(-1, 1)
                     else:
-                        raise ValueError("parallel_runs can not be greater than one")
+                        for i in range(input_data.shape[0]):
+                            state = self.state[:, i]
+                            slm_imgs = self.generate_slm_imgs(input_data[i, :, :], state)
+                            adict = {}
+                            adict['phase_vec'] = np.array(slm_imgs[0,:], dtype='uint8') # since SLM is 8bit
+                            sio.savemat('phase_vec.mat', adict)
+                            self.matlab_eng.get_speckle(nargout=0)
+                            cam_data_matlab = self.matlab_eng.workspace['data']
+                            self.state = ((1-self.leak_rate)*np.ravel(np.array(cam_data_matlab._data).reshape(
+                                cam_data_matlab.size[::-1]).T)[self.cam_sampling_range] + self.leak_rate*self.state).reshape(-1, 1)
 
-                if time_step >= self.forget:
-                    res_states[idx_sequence, time_step - self.forget, :] = self.state.T
-        
+                if time_step >= forget:
+                    res_states[idx_sequence, time_step - forget, :] = self.state[:, idx_sequence].T
+            # print('mean_var_state = '+str(np.mean(var_state)))
+            # print('var_var_state = '+str(np.var(var_state)))
         res_states = np.real_if_close(res_states)
-        self.state = res_states.reshape((-1, res_states.shape[-1])).T # will be used in update equation if recursive prediction is active
+        self.state = np.copy(res_states.reshape((-1, res_states.shape[-1])).T) # will be used in update equation if recursive prediction is active
 
-        state_iscomplex = True if any(np.iscomplex(res_states.flatten())) else False
+
+        if any(np.iscomplex(res_states.flatten())):
+            state_iscomplex = True
+            print('state_iscomplex')
+        else:
+            state_iscomplex = False
         res_states = np.concatenate((np.abs(res_states) ** 2,
                                     np.angle(res_states, deg=False))) if state_iscomplex else res_states
 
-            # standardization of the reservoir
+        # standardization of the reservoir
         if self.res_standardize:
             for i in range(n_sequence):
                 preprocessing.scale(res_states[i, :, :], axis=0, copy=False)
         if self.scale_res_MinMax:
-            encode.scale(res_states, self.scale_res_MinMax, in_place=True)
+            res_states = data_utils.scale(res_states, self.scale_res_MinMax)
 
-        # construct the concatenated states
-        if self.random_projection == 'PRL':
-            concat_states = np.concatenate((res_states, res_states**2), axis=2)
-        else:
-            concat_states = res_states
-            if self.raw_input_feature:
-                concat_states = np.concatenate((concat_states, raw_input_data[:, self.forget:, :]), axis=2)
-            if self.enc_input_feature:
-                enc_input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
-                enc_input_data = np.angle(
-                    input_data, deg=False) if enc_input_iscomplex else input_data
-                concat_states = np.concatenate((concat_states, enc_input_data[:, self.forget:, :]), axis=2)
+        concat_states = res_states
+        if self.raw_input_feature:
+            concat_states = np.concatenate((concat_states, raw_input_data[:, forget:, :]), axis=2)
+        if self.enc_input_feature:
+            enc_input_iscomplex = True if any(np.iscomplex(input_data.flatten())) else False
+            enc_input_data = np.angle(
+                input_data, deg=False) if enc_input_iscomplex else input_data
+            concat_states = np.concatenate((concat_states, enc_input_data[:, forget:, :]), axis=2)
 
         if self.parallel_res > 1:
             n_sequence, sequence_length, concat_dim = concat_states.shape
@@ -706,16 +712,14 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 plt.title('Distribution of reservoir activations')
                 plt.xlabel('Activation value')
                 plt.show()
-        self.forget = self.forget__
-        self.parallel_runs = self.parallel_runs__
         return concat_states
 
     def train(self, concat_states, y):
         """ Performs a linear regression """
         concat_states = concat_states.reshape(-1, concat_states.shape[-1])
         y = y.reshape(-1, y.shape[-1])
-        print('concat_states.shape = '+str(concat_states.shape))
-        print('y.shape = '+str(y.shape))
+        # print('concat_states.shape = '+str(concat_states.shape))
+        # print('y.shape = '+str(y.shape))
 
         if self.train_method == 'explicit':
             output_w, res, rnk, s = lstsq(concat_states, y)
@@ -792,16 +796,28 @@ class Reservoir(BaseEstimator, RegressorMixin):
         pred_output_norm = pred_output/true_data_std
         length_input = pred_output.shape[0]
         rand = np.random.rand(pred_output_norm.shape[0], pred_output_norm.shape[1])*max(abs(true_data_norm.flatten()))
-
-        rmse = np.zeros((length_input-1, total_pred-1))
-        rmse_rand = np.zeros((length_input-1, total_pred-1))
-        for n_input in range(1, length_input):
+        # print('pred_output_norm.shape = '+str(pred_output_norm.shape))
+        # print('true_data_norm.shape = '+str(true_data_norm.shape))
+        # print('length_input = '+str(length_input))
+        if length_input == 1:
+            rmse = np.zeros((1, total_pred-1))
+            rmse_rand = np.zeros((1, total_pred-1))
             for n_pred in range(1, total_pred):
-                d1 = pred_output_norm[n_input, :n_pred*spatial_points]
-                d2 = true_data_norm[n_input, :n_pred*spatial_points]
-                d_rand = rand[n_input, :n_pred*spatial_points]
-                rmse[n_input-1, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
-                rmse_rand[n_input-1, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d_rand.flatten() - d2.flatten())**2))
+                d1 = pred_output_norm[0, :n_pred*spatial_points]
+                d2 = true_data_norm[0, :n_pred*spatial_points]
+                d_rand = rand[0, :n_pred*spatial_points]
+                rmse[0, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
+                rmse_rand[0, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d_rand.flatten() - d2.flatten())**2))
+        else:
+            rmse = np.zeros((length_input-1, total_pred-1))
+            rmse_rand = np.zeros((length_input-1, total_pred-1))
+            for n_input in range(1, length_input):
+                for n_pred in range(1, total_pred):
+                    d1 = pred_output_norm[n_input, :n_pred*spatial_points]
+                    d2 = true_data_norm[n_input, :n_pred*spatial_points]
+                    d_rand = rand[n_input, :n_pred*spatial_points]
+                    rmse[n_input-1, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d1.flatten() - d2.flatten())**2))
+                    rmse_rand[n_input-1, n_pred-1] = np.sqrt(1./(n_pred*spatial_points)*np.sum((d_rand.flatten() - d2.flatten())**2))
         norm = np.mean(rmse_rand)
         rmse = rmse / norm
         rmse_vec = np.mean(rmse, axis=0)
