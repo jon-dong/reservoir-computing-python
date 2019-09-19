@@ -10,6 +10,7 @@ import data_utils
 
 def phase_encoding(mat, scaling_factor=np.pi, n_levels=int(256/2)):
     """ Transforms a real-valued vector into a phase-only vector encoded by n_levels from 0 to scaling_factor"""
+    print(np.max(mat), np.min(mat), np.max(mat) - np.min(mat))
     mat = np.round(data_utils.scale(mat, [0, 1]) * n_levels) / n_levels
     return np.exp(1j * mat * scaling_factor)
 

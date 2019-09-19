@@ -468,14 +468,14 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.activation_param = 1
             def fun(x):
                 x = np.abs(x) ** 2
-                # self.xx = x
+                self.xx = x
                 return x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
             return fun
         elif self.activation_fun == 'intensity_in_tanh':
             if self.activation_param is None:
                 self.activation_param = 1
             def fun(x):
-                x = np.array(np.abs(x) ** 2)
+                x = np.array(np.abs(x))
                 x = x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
                 x = 1 + np.tanh(data_utils.scale(x, (-3, 0)))
                 # x = np.array(data_utils.scale(x**2, [np.amin(0), np.amax(x)]))
@@ -533,6 +533,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.state = act(
                         (1 - self.leak_rate) * (np.dot(input_data[idx_sequence, time_step, :], self.input_w.T) +
                         np.dot(self.encode(self.state, target='res'), self.res_w.T)) + self.leak_rate * self.state + self.bias_vec)
+                    # print(self.state)
                 elif self.random_projection == 'structured':
                     # print((self.res_scale * self.state / np.sqrt(self.n_res)).shape)
                     # print((self.input_scale * input_data[idx_sequence, time_step, :].reshape((parallel_runs, -1)).T / np.sqrt(self.input_dim)).shape)
@@ -651,11 +652,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                 cam_data_matlab.size[::-1]).T)[self.cam_sampling_range] + self.leak_rate*self.state).reshape(-1, 1)
 
                 if time_step >= forget:
-                    res_states[idx_sequence, time_step - forget, :] = self.state[:, idx_sequence].T
+                    res_states[idx_sequence, time_step - forget, :] = self.state[idx_sequence, :]
             # print('mean_var_state = '+str(np.mean(var_state)))
             # print('var_var_state = '+str(np.var(var_state)))
         res_states = np.real_if_close(res_states)
-        self.state = np.copy(res_states.reshape((-1, res_states.shape[-1])).T) # will be used in update equation if recursive prediction is active
+        self.state = np.copy(res_states.reshape((-1, res_states.shape[-1]))) # will be used in update equation if recursive prediction is active
 
 
         if any(np.iscomplex(res_states.flatten())):
