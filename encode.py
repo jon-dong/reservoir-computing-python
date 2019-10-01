@@ -8,10 +8,10 @@ import numpy as np
 import data_utils
 
 
-def phase_encoding(mat, scaling_factor=np.pi, n_levels=int(256/2)):
+def phase_encoding(mat, scaling_factor=np.pi, n_levels=int(256)):
     """ Transforms a real-valued vector into a phase-only vector encoded by n_levels from 0 to scaling_factor"""
-    print(np.max(mat), np.min(mat), np.max(mat) - np.min(mat))
-    mat = np.round(data_utils.scale(mat, [0, 1]) * n_levels) / n_levels
+    # print(np.amax(mat), np.amin(mat), scaling_factor)
+    mat = np.round(mat * n_levels) / n_levels
     return np.exp(1j * mat * scaling_factor)
 
 def slm_encoding(mat, scaling_factor=int(256/2), n_levels=int(256/2)):
@@ -44,6 +44,17 @@ def local_binary(mat, lower_bound=-0.5, higher_bound=0.5, step=1, binary_dim=10)
     for i_binary in range(binary_dim):
         enc_input_data[..., i_binary::binary_dim] = \
             np.mod((normalized_mat - 2*step[i_binary]*np.random.uniform()) // step[i_binary], 2) == 0
+    return enc_input_data
+
+def bin_binary(mat, binary_dim=10):
+    step = 1 / binary_dim
+    if mat.ndim == 1:  # If the matrix is a vector
+        mat = mat[..., np.newaxis]  # Transform into a matrix
+    normalized_mat = data_utils.scale(mat, [0, 1])
+    enc_input_data = np.repeat(np.zeros(mat.shape), binary_dim, axis=-1)
+    for i_binary in range(binary_dim):
+        enc_input_data[..., i_binary::binary_dim] = (normalized_mat > i_binary * step) * (
+                normalized_mat < (i_binary + 1) * step)
     return enc_input_data
 
 

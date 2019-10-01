@@ -54,7 +54,7 @@ import encode
 import data_utils
 import scipy.io as sio
 from numpy import linalg as LA
-import ffht
+# import ffht
 from scipy.stats import chi
 
 
@@ -67,7 +67,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  bias_scale=1,  # bias
                  random_projection='simulation', weights_type='gaussian',  # weights
                  activation_fun='tanh', activation_param=None, leak_rate=1,  # dynamics
-                 parallel_runs=None, forget=100,  # iterations
+                 parallel_runs=None, forget=100, parallel_test_runs=1, # iterations
                  future_pred=True, pred_horizon=1, rec_pred_steps=1,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
                  raw_input_feature = False, enc_input_feature = True, # concatenated states properties
@@ -91,6 +91,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.activation_param = activation_param
         self.leak_rate = leak_rate
         self.parallel_runs = parallel_runs if parallel_runs is not None else 1
+        self.parallel_test_runs = parallel_test_runs
         self.parallel_res = parallel_res
         self.forget = forget
         self.future_pred = future_pred
@@ -119,6 +120,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.res_w = None
         self.output_w = None
         self.state = None
+        self.state_ = None
+        self.activation_param0 = None
 
         self.fit_score = None
         self.init_timer = None
@@ -145,10 +148,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
     def fit(self, input_data, true_output=None):
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
+            self.forget = 100
         """
         Iterates the reservoir with training input and fits the output weights based on the first n time steps of
         input_data in order to predict next time steps with length of pred_length, for each n.
         """
+        self.activation_param = None
+        self.activation_param0 = None
         if self.input_standardize:
             for i in range(input_data.shape[0]):
                 preprocessing.scale(input_data[i, :, :], axis=0, copy=False)
@@ -190,8 +196,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(self.iterate_timer) + ' s')
         true_output = true_output[:, self.forget:, :]
-        # print('concat_states.shape_ = '+str(concat_states))
-        # print('true_output.shape_ = '+str(true_output))
         self.output_w = self.train(concat_states, true_output)
 
         pred_output = self.output(concat_states)
@@ -216,14 +220,16 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return self
 
     def score(self, input_data, true_output=None, sample_weight=None):
-
+        # std_concat = np.std(np.std(self.c[0, :, :-65].T, axis=0)) # used as a benchmark for good parameters selection in gridsearch
+        # return std_concat
         return self.predict_and_score(input_data, true_output, only_score=True)
 
     def predict_and_score(self, input_data, true_output=None, only_score=False, detailed_score=False, sample_weight=None):
-        total_pred_steps = self.pred_horizon*self.rec_pred_steps
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
         n_sequence, sequence_length, spatial_points = input_data.shape
+        total_pred_steps = self.pred_horizon*self.rec_pred_steps
+        self.forget = sequence_length - total_pred_steps - self.parallel_test_runs
         # preprocessing of the input data
         if self.input_standardize:
             for i in range(input_data.shape[0]):
@@ -235,7 +241,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.future_pred and true_output is None:
             true_output = data_utils.roll_and_concat(
                 input_data[:, self.forget:, :], roll_num=total_pred_steps)
-            true_output = true_output[:, :-total_pred_steps, :]##
+            true_output = true_output[:, :-total_pred_steps, :]
         else:
             # preprocessing of the output data
             if self.output_standardize:
@@ -259,46 +265,40 @@ class Reservoir(BaseEstimator, RegressorMixin):
             print('Initialization complete. \t\tElapsed time: ' + str(init_timer) + ' s')
 
         true_output = true_output.reshape(-1, true_output.shape[-1])
-        pred_output = np.zeros((sequence_length-self.forget-total_pred_steps, spatial_points*total_pred_steps))##
-        # print('self.forget = '+str(self.forget))
-        # print('self.output_w.shape = '+str(self.output_w.shape))
-        input_data_temp = input_data[:, :-total_pred_steps, :]##
-        for i in tnrange(self.rec_pred_steps, desc='reservoir update'):
-            # print('input_data_temp.shape = '+str(input_data_temp.shape))
-            concat_states = self.iterate(input_data_temp).reshape(-1, self.n_res+spatial_points)  # refreshing the concat states for each prediction step
+        pred_output = np.zeros((self.parallel_test_runs, spatial_points*total_pred_steps))
+        input_data_temp = input_data[:, :-total_pred_steps, :]
+        # self.concat_temp = np.zeros((self.rec_pred_steps, sequence_length-total_pred_steps-self.forget, self.n_res+spatial_points))
+        if self.verbose and self.rec_pred_steps > 1:
+            time_iterable = tnrange(self.rec_pred_steps, desc='reservoir update')
+        else:
+            time_iterable = range(self.rec_pred_steps)
+        for i in time_iterable:
+            concat_states = self.iterate(input_data_temp)
+            concat_states = concat_states.reshape(-1, concat_states.shape[-1])  # refreshing the concat states for each prediction step
             input_data_temp = self.output(concat_states)
-            # print('input_data_temp = '+str(input_data_temp[:3,:4]))
-
-            # if i >= parallel:
-            #     j = i - parallel
-            #     pred_output[:, j*spatial_points:(j+1)*spatial_points] = input_data_temp
+#             self.concat_temp[i, :, :] = concat_states.reshape((-1, self.n_res+spatial_points))
 
             pred_output[:, i*spatial_points:(i+1)*spatial_points] = input_data_temp.reshape((-1, spatial_points))
 
-        # print('pred_output = '+str(pred_output[:3, :4]))
-        # print('true_output = '+str(true_output[:3, :4]))
         iterate_end = time.time()
         iterate_timer = iterate_end - init_end
-        print('true_output.shape = '+str(true_output.shape))
         if self.verbose:
             print('Reservoir iterations complete. \t\tElapsed time: ' + str(iterate_timer) + ' s')
 
-        score = self.score_metric(pred_output, true_output)
+        rmse, rmse_vec, rmse_vert = self.detailed_pred_score(pred_output, true_output, spatial_points)
+        score = 1 - np.mean(rmse)
 
         test_end = time.time()
         test_timer = test_end - iterate_end
+        if self.gridsearch:
+            print('Testing score: ' + str(score))
         if self.verbose:
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
             
         if detailed_score:
-            # print('__________'+str(pred_output[0,:]))
-            # print(true_output)
-            rmse, rmse_vec, rmse_vert = self.detailed_pred_score(pred_output, true_output, spatial_points)
             return pred_output, rmse, rmse_vec, rmse_vert
         elif only_score:
-            rmse, rmse_vec, rmse_vert = self.detailed_pred_score(pred_output, true_output, spatial_points)
-            score = 1-np.mean(rmse)
             return score
         else:
             return pred_output, score
@@ -384,7 +384,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
     def reset_state(self):
         """ Resets the reservoir state, for new runs """
         # To-do: add different statistics
-        self.state = self.random_state.normal(loc=0., scale=1, size=(self.parallel_runs, self.n_res))
+        if self.res_encoding == 'phase':
+            if self.state is None:
+                self.state_ = self.random_state.normal(loc=0.5, scale=0.2, size=(self.parallel_runs, self.n_res))
+            self.state = self.state_
+        else:
+            self.state = self.random_state.normal(loc=0., scale=1, size=(self.parallel_runs, self.n_res))
 
     def encode(self, mat, target=None):
         """ Encodes the input or the reservoir """
@@ -415,6 +420,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 enc_param = [-0.5, 0.5, 0.5]
             return encode.local_binary(mat, binary_dim=enc_dim, lower_bound=enc_param[0],
                                        higher_bound=enc_param[1], step=enc_param[2])
+        elif encoding_type == 'bin binary':
+            return encode.bin_binary(mat, binary_dim=enc_dim)
         elif encoding_type == 'bit encoding':
             if enc_param is None:
                 enc_param = [-0.5, 0.5]
@@ -464,21 +471,28 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.activation_fun == 'abs':
             return lambda x: np.abs(x)
         elif self.activation_fun == 'intensity':
-            if self.activation_param is None:
-                self.activation_param = 1
             def fun(x):
                 x = np.abs(x) ** 2
+                if self.activation_param is None:
+                    self.activation_param = np.amin(x) + (np.amax(x) - np.amin(x))*1.5
                 self.xx = x
                 return x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
             return fun
         elif self.activation_fun == 'intensity_in_tanh':
-            if self.activation_param is None:
-                self.activation_param = 1
             def fun(x):
-                x = np.array(np.abs(x))
-                x = x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
-                x = 1 + np.tanh(data_utils.scale(x, (-3, 0)))
-                # x = np.array(data_utils.scale(x**2, [np.amin(0), np.amax(x)]))
+                x = np.abs(x)
+                # print(np.max(x), np.min(x))
+                if self.activation_param is None:
+                    self.activation_param = np.min(x) + (np.max(x) - np.min(x))*1.7
+                    # self.activation_param = 5.7
+                x = self.activation_param - (x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param))
+                if self.activation_param0 is None:
+                    self.activation_param0 = np.min(x)*0.9
+                    # self.activation_param0 = 1.8
+                # print(np.max(x), np.min(x), np.max(x) - np.min(x))
+                x = 1 - np.tanh(4*(x-self.activation_param0)/(self.activation_param-self.activation_param0))
+                # print(np.max(x), np.min(x), np.max(x) - np.min(x))
+                # x = 1 - np.tanh(data_utils.scale(x, (0, 3)))
                 self.xx = x
                 return x
             return fun
@@ -527,13 +541,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 time_iterable = tqdm_notebook(range(sequence_length), file=sys.stdout,  desc='reservoir construction')
             else:
                 time_iterable = range(sequence_length)
-            # var_state = np.zeros(sequence_length)
             for time_step in time_iterable:
                 if self.random_projection == 'simulation':
                     self.state = act(
                         (1 - self.leak_rate) * (np.dot(input_data[idx_sequence, time_step, :], self.input_w.T) +
                         np.dot(self.encode(self.state, target='res'), self.res_w.T)) + self.leak_rate * self.state + self.bias_vec)
-                    # print(self.state)
                 elif self.random_projection == 'structured':
                     # print((self.res_scale * self.state / np.sqrt(self.n_res)).shape)
                     # print((self.input_scale * input_data[idx_sequence, time_step, :].reshape((parallel_runs, -1)).T / np.sqrt(self.input_dim)).shape)
@@ -653,19 +665,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
                 if time_step >= forget:
                     res_states[idx_sequence, time_step - forget, :] = self.state[idx_sequence, :]
-            # print('mean_var_state = '+str(np.mean(var_state)))
-            # print('var_var_state = '+str(np.var(var_state)))
         res_states = np.real_if_close(res_states)
         self.state = np.copy(res_states.reshape((-1, res_states.shape[-1]))) # will be used in update equation if recursive prediction is active
 
 
         if any(np.iscomplex(res_states.flatten())):
-            state_iscomplex = True
             print('state_iscomplex')
-        else:
-            state_iscomplex = False
-        res_states = np.concatenate((np.abs(res_states) ** 2,
-                                    np.angle(res_states, deg=False))) if state_iscomplex else res_states
+            res_states = np.concatenate((np.abs(res_states) ** 2, np.angle(res_states, deg=False)))
 
         # standardization of the reservoir
         if self.res_standardize:
@@ -673,7 +679,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 preprocessing.scale(res_states[i, :, :], axis=0, copy=False)
         if self.scale_res_MinMax:
             res_states = data_utils.scale(res_states, self.scale_res_MinMax)
-
+        
         concat_states = res_states
         if self.raw_input_feature:
             concat_states = np.concatenate((concat_states, raw_input_data[:, forget:, :]), axis=2)
