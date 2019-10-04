@@ -60,6 +60,7 @@ from scipy.stats import chi
 class Reservoir(BaseEstimator, RegressorMixin):
     def __init__(self,
                  n_res=400, parallel_res=1, res_scale=1, res_encoding=None, res_enc_dim=1, res_enc_param=None,  # reservoir
+                 remove_saturated_neurons=False, n_saturated_neurons=None, # reservoir cleanup
                  input_scale=1, input_encoding=None, input_enc_dim=1, input_enc_param=None,  # input
                  input_standardize = False, res_standardize = False, output_standardize = False, # data standardization
                  scale_input_MinMax = False, scale_res_MinMax = False, scale_output_MinMax = False, # data standardization
@@ -121,6 +122,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.state = None
         self.state_ = None
         self.activation_param0 = None
+        self.remove_saturated_neurons = remove_saturated_neurons
+        self.n_saturated_neurons = n_saturated_neurons
+        self.neurons_to_remove = None # will be defined during the fitting
 
         self.fit_score = None
         self.init_timer = None
@@ -460,7 +464,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 x = np.abs(x) ** 2
                 if self.activation_param is None:
                     self.activation_param = np.amin(x) + (np.amax(x) - np.amin(x))*1.5
-                self.xx = x
+                self.yy = x
                 return x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
             return fun
         elif self.activation_fun == 'intensity_in_tanh':
@@ -478,7 +482,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 x = 1 - np.tanh(4*(x-self.activation_param0)/(self.activation_param-self.activation_param0))
                 # print(np.max(x), np.min(x), np.max(x) - np.min(x))
                 # x = 1 - np.tanh(data_utils.scale(x, (0, 3)))
-                self.xx = x
+                self.yy = x
                 return x
             return fun
         else:  # in this last case, we allow external definition of the activation function
@@ -696,6 +700,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
         res = np.concatenate((np.abs(res) ** 2, np.angle(res, deg=False))) if any(np.iscomplex(res.flatten())) else res
         res = data_utils.data_preprocessing(res, standardize = self.res_standardize, scale_min_max = self.scale_res_MinMax)
 
+        if self.remove_saturated_neurons:
+            if self.neurons_to_remove is None:
+                mean_res_states = np.mean(res[0, :, :], axis=0)
+                self.neurons_to_remove = mean_res_states.argsort()[-self.n_saturated_neurons:][::-1]
+            res = np.delete(res, self.neurons_to_remove, axis=2)
+
         concat_states = np.concatenate((res, input), axis=2)
 
         if self.parallel_res > 1:
@@ -817,6 +827,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
         return rmse, rmse_vec, rmse_vert
 
     def generate_slm_imgs(self, input_data, reservoir):
+
+        if len(input_data.shape)==1:
+            input_data = input_data.reshape((1,-1))
 
         # We first fix the size of the reservoir
         res_repeat = np.round(self.res_scale**2)
