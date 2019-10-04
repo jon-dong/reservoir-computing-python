@@ -15,6 +15,7 @@ Output:
 
 import numpy as np
 from sklearn.utils import check_random_state
+from sklearn import preprocessing
 
 
 def roll_and_concat(input_data, roll_num=1):
@@ -107,6 +108,22 @@ def get_kuramoto_sivashinsky_lyap_exp(sequence_length=1000, n_sequence = 100, sp
     lyap_exp = np.polyfit(range(len(spectrum)), spectrum, 1)[0]/h
 
     return lyap_exp
+
+
+def data_preprocessing(data, standardize=None, scale_min_max=None):
+    """
+    :param data: the processing data
+    :param standardise: true or false
+    :param scale: None or a list of lower and higher bowndaries of scaling
+    :return: the processed data
+    """
+    if standardize:
+        for i in range(data.shape[0]):
+            preprocessing.scale(data[i, :, :], axis=0, copy=False)
+    if scale_min_max:
+        data = scale(data, scale_min_max)
+
+    return data
 
 
 def scale(array, min_max, in_place=False):
