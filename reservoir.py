@@ -282,6 +282,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
+        if self.random_projection == 'meadowlark slm':
+            self.matlab_eng.camera_close(nargout=0)
+            self.matlab_eng.slm_close(nargout=0)
+            self.matlab_eng.quit()
             
         if detailed_score:
             return pred_output, rmse, rmse_vec, rmse_vert
@@ -371,7 +375,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
     def reset_state(self):
         """ Resets the reservoir state, for new runs """
         # To-do: add different statistics
-        if self.res_encoding == 'phase':
+        if self.res_encoding == 'phase' or self.res_encoding == 'meadowlark slm':
             if self.state is None:
                 self.state_ = self.random_state.normal(loc=0.5, scale=0.2, size=(self.parallel_runs, self.n_res))
             self.state = self.state_
@@ -479,13 +483,13 @@ class Reservoir(BaseEstimator, RegressorMixin):
             def fun(x):
                 x = np.abs(x)
                 # print(np.max(x), np.min(x))
-                if self.activation_param is None:
-                    self.activation_param = np.min(x) + (np.max(x) - np.min(x))*1.7
+                if self.activation_param is None or self.activation_param0 is None:
+                    self.activation_param = np.min(x) + (np.max(x) - np.min(x))*1.5
                     x = self.activation_param - (x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param))
                     self.activation_param0 = np.min(x)*0.9
                 else:
                     x = self.activation_param - (x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param))
-                x = 1 - np.tanh(4*(x-self.activation_param0)/(self.activation_param-self.activation_param0))
+                x = 1 - np.tanh(3*(x-self.activation_param0)/(self.activation_param-self.activation_param0))
                 self.yy = x
                 return x
             return fun
@@ -527,10 +531,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.slm_size = [1920, 1152]
                 self.matlab_eng.workspace['slm_size'] = matlab.double(self.slm_size)
                 self.cam_sampling_range = np.linspace(0, (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1, self.n_res, dtype='uint32')
-                self.matlab_eng.cd(r'D:\Users\Mickael-manip\Desktop\JonMush', nargout=0)
-                self.matlab_eng.open_slm(nargout=0)
-                self.matlab_eng.open_maitai(nargout=0)
-                self.matlab_eng.open_camera(nargout=0)
+                if self.n_res > (self.cam_roi[0]-1)*(self.cam_roi[1]-1)-1:
+                    warnings.warn("The number of camera pixels is less than the required size of the reservoir")
+                self.matlab_eng.cd(r'D:\Users\Comedia\projects\reservoir-computing-python\hardware_control', nargout=0)
+                self.matlab_eng.slm_open(nargout=0)
+                self.matlab_eng.camera_open(nargout=0)
 
         for i_sequence in range(int(n_sequence / parallel_runs)):
             idx_sequence = np.arange(i_sequence * parallel_runs, (i_sequence + 1) * parallel_runs)
@@ -644,7 +649,12 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     plt.show()
                 elif self.random_projection == 'meadowlark slm':
                     enc_state = self.encode(self.state, target='res')
-                    slm_imgs = self.generate_slm_imgs(enc_input_data, enc_state)
+                    slm_imgs = self.generate_slm_imgs(enc_input_data[idx_sequence, time_step, :], enc_state)
+                    # We find the bias
+                    bias_size = round(self.n_res * self.bias_scale**2)
+                    dim = np.sqrt(bias_size + slm_imgs.shape[-1])
+                    self.matlab_eng.eval('macropix_size1 = ' + str(int(self.slm_size[0]/dim)) + ';', nargout=0)
+                    self.matlab_eng.eval('macropix_size2 = ' + str(int(self.slm_size[1]/dim)) + ';', nargout=0)
                     adict = {}
                     adict['phase_vecs'] = np.array(slm_imgs, dtype='uint8') # since SLM is 8bit TODO: check if without 8bit the speed or perform. is affected
                     sio.savemat('hardware_control/phase_vecs.mat', adict)
@@ -653,6 +663,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.state = (1-self.leak_rate)*act(
                         (np.array(cam_data_matlab._data).reshape(cam_data_matlab.size[::-1]).T).reshape(
                             (n_sequence,-1))[:,self.cam_sampling_range]) + self.leak_rate*self.state
+                    if self.matlab_eng.workspace['missing_trigs'] > 0:
+                        warnings.warn(str(self.matlab_eng.workspace['missing_trigs']) + " number of times the trigger is missed")
 
                 if time_step >= forget:
                     res_states[idx_sequence, time_step - forget, :] = self.state[idx_sequence, :]
@@ -665,9 +677,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         # Release hardware if we use the optical setup
         if self.random_projection == 'lighton opu':
             self.opu.close()
-#         elif self.random_projection == 'meadowlark slm':
-#             self.matlab_eng.close_all(nargout=0)
-#             self.matlab_eng = None
 
         if self.verbose >= 2:
             min_res = np.amin(res_states)
@@ -831,29 +840,25 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def generate_slm_imgs(self, input_data, reservoir):
 
-        if len(input_data.shape)==1:
-            input_data = input_data.reshape((1,-1))
+        # if len(input_data.shape)==1:
+        #     input_data = input_data.reshape((1,-1))
+        
+        # if len(input_data.shape)==3:
+        #     input_data = input_data.reshape((-1,input_data.shape[-1]))
 
         # We first fix the size of the reservoir
-        res_repeat = np.round(self.res_scale**2)
-        res_size = np.int(res_repeat * self.n_res)
+        res_repeat = round(self.res_scale**2)
+        res_size = res_repeat * self.n_res
 
         # We find how many times to repeat the input
         n_sequence, input_dim = input_data.shape
-        input_repeat = np.round(self.n_res * self.input_scale**2 / input_dim)
-        input_size = np.int(input_repeat * input_dim)
-
-        # We find the bias
-        bias_repeat = np.round(self.n_res * self.bias_scale**2)
-        bias_size = np.int(bias_repeat)
+        input_repeat = round(self.n_res * self.input_scale**2 / input_dim)
+        input_size = input_repeat * input_dim
 
         # We put everything in a new vector
-        total_size = res_size + input_size + bias_size
-        factor = np.int(self.slm_size[0] * self.slm_size[1] / total_size)
-
-        slm_imgs = np.zeros((n_sequence, total_size - bias_size))
-        slm_imgs[:, :res_size] = np.repeat(reservoir.T, res_repeat * factor, axis=1)
-        slm_imgs[:, res_size:res_size+input_size] = np.repeat(input_data, input_repeat * factor, axis=1)
+        slm_imgs = np.zeros((n_sequence, res_size + input_size))
+        slm_imgs[:, :res_size] = np.repeat(reservoir, res_repeat, axis=1)
+        slm_imgs[:, res_size:res_size+input_size] = np.repeat(input_data, input_repeat, axis=1)
 
         return slm_imgs
         

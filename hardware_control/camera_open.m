@@ -51,9 +51,9 @@ src.ExposureMode = 'Timed';
 vid.FramesPerTrigger = 1;
 % src.PacketSize = 1500;
 vid.TriggerRepeat = Inf;
-src.ExposureTime = 1000;
+src.ExposureTime = 7500;
 % imaqmex('feature', '-gigeDisablePacketResend', true);
-src.TriggerDelay = 3000;   % 6000
+src.TriggerDelay = 6000;   % 3000
 
 % imaqmem(100000000);
 
