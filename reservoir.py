@@ -150,6 +150,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
     def fit(self, input_data, true_output=None):
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
+            self.activation_param = None
+            self.activation_param0 = None
             self.forget = 100
         """
         Iterates the reservoir with training input and fits the output weights based on the first n time steps of
