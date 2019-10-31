@@ -65,8 +65,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  input_standardize = False, res_standardize = False, output_standardize = False, # data standardization
                  scale_input_MinMax = False, scale_res_MinMax = False, scale_output_MinMax = False, # data standardization
                  bias_scale=1,  # bias
-                 random_projection='simulation', weights_type='gaussian',  # weights
-                 activation_fun='tanh', activation_param=None, leak_rate=1,  # dynamics
+                 random_projection=None, weights_type=None,  # weights
+                 activation_fun=None, activation_param=None, activation_param1=None, activation_param2=None, leak_rate=1,  # dynamics
                  parallel_runs=None, forget=100, parallel_test_runs=1, # iterations
                  future_pred=True, pred_horizon=1, rec_pred_steps=1,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
@@ -89,6 +89,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.weights_type = weights_type
         self.activation_fun = activation_fun
         self.activation_param = activation_param
+        self.activation_param1 = activation_param1 # used in "intensity_in_tanh" activation function
+        self.activation_param2 = activation_param2 # used in "intensity_in_tanh" activation function
         self.leak_rate = leak_rate
         self.parallel_runs = parallel_runs if parallel_runs is not None else 1
         self.parallel_test_runs = parallel_test_runs
@@ -107,7 +109,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.gridsearch = gridsearch
 
         self.train_param = train_param
-        self.random_state = random_state
+        self.random_state = check_random_state(random_state)
         self.raw_input_feature = raw_input_feature
         self.enc_input_feature = enc_input_feature
         self.save = save
@@ -120,8 +122,6 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.res_w = None
         self.output_w = None
         self.state = None
-        self.state_ = None
-        self.activation_param0 = None
         self.remove_saturated_neurons = remove_saturated_neurons
         self.n_saturated_neurons = n_saturated_neurons
         self.neurons_to_remove = None # will be defined during the fitting
@@ -151,7 +151,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.gridsearch:
             input_data = input_data.reshape((input_data.shape[1], input_data.shape[0], input_data.shape[2]))
             self.activation_param = None
-            self.activation_param0 = None
+            self.activation_param1 = None
             self.forget = 100
         """
         Iterates the reservoir with training input and fits the output weights based on the first n time steps of
@@ -184,7 +184,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         self.init_timer = init_end - start
         if self.verbose:
             print('Initialization complete. \t\tElapsed time: ' + str(self.init_timer) + ' s')
-        
+
         concat_states = self.iterate(input_data)
         self.c = concat_states
 
@@ -282,10 +282,10 @@ class Reservoir(BaseEstimator, RegressorMixin):
         if self.verbose:
             print('Testing complete. \t\t\tElapsed time: ' + str(test_timer) + ' s')
             print('Testing score: ' + str(score))
-        if self.random_projection == 'meadowlark slm':
-            self.matlab_eng.camera_close(nargout=0)
-            self.matlab_eng.slm_close(nargout=0)
-            self.matlab_eng.quit()
+        # if self.random_projection == 'meadowlark slm':
+        #     self.matlab_eng.camera_close(nargout=0)
+        #     self.matlab_eng.slm_close(nargout=0)
+        #     self.matlab_eng.quit()
             
         if detailed_score:
             return pred_output, rmse, rmse_vec, rmse_vert
@@ -296,10 +296,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
 
     def initialize(self):
         """ Initializes the reservoir state, the input and reservoir weights """
-        self.random_state = check_random_state(self.random_state)
         total_input_dim = self.input_dim * self.input_enc_dim
         total_res_dim = self.n_res * self.res_enc_dim
-        if self.random_projection == 'simulation' or 'LC_simulation':
+        if self.random_projection == 'simulation' or self.random_projection == 'LC_simulation':
             self.bias_vec = self.random_state.normal(loc=0., scale=self.bias_scale, size=(1, self.n_res))
             if self.weights_type == 'gaussian':
                 self.input_w = self.random_state.normal(loc=0., scale=self.input_scale / np.sqrt(total_input_dim),
@@ -376,9 +375,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
         """ Resets the reservoir state, for new runs """
         # To-do: add different statistics
         if self.res_encoding == 'phase' or self.res_encoding == 'meadowlark slm':
-            if self.state is None:
-                self.state_ = self.random_state.normal(loc=0.5, scale=0.2, size=(self.parallel_runs, self.n_res))
-            self.state = self.state_
+            self.state = self.random_state.normal(loc=0.5, scale=0.2, size=(self.parallel_runs, self.n_res))
         elif self.random_projection == 'LC_reservoir':
             self.state = np.ones((self.parallel_runs, self.n_res))
         else:
@@ -467,7 +464,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
             def fun(x):
                 x = np.abs(x) ** 2
                 if self.activation_param is None:
-                    self.activation_param = np.amin(x) + (np.amax(x) - np.amin(x))*1.5
+                    self.activation_param = np.amin(x) + (np.amax(x) - np.amin(x))*1.45
                 self.yy = x
                 return x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
             return fun
@@ -482,14 +479,17 @@ class Reservoir(BaseEstimator, RegressorMixin):
         elif self.activation_fun == 'intensity_in_tanh':
             def fun(x):
                 x = np.abs(x)
-                # print(np.max(x), np.min(x))
-                if self.activation_param is None or self.activation_param0 is None:
-                    self.activation_param = np.min(x) + (np.max(x) - np.min(x))*1.5
-                    x = self.activation_param - (x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param))
-                    self.activation_param0 = np.min(x)*0.9
+                if (self.activation_param is None) or (self.activation_param1 is None):
+                    self.activation_param = np.amin(x) + (np.amax(x) - np.amin(x)) * 1.7
+                    x = self.activation_param - (
+                            x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param))
+                    self.activation_param1 = np.amin(x) * 0.9
                 else:
-                    x = self.activation_param - (x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param))
-                x = 1 - np.tanh(3*(x-self.activation_param0)/(self.activation_param-self.activation_param0))
+                    x = self.activation_param - (
+                            x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param))
+                if self.activation_param2 is None:
+                    self.activation_param2 = 4
+                x = 1 - np.tanh(self.activation_param2*(x-self.activation_param1)/(self.activation_param-self.activation_param1))
                 self.yy = x
                 return x
             return fun
@@ -650,11 +650,11 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 elif self.random_projection == 'meadowlark slm':
                     enc_state = self.encode(self.state, target='res')
                     slm_imgs = self.generate_slm_imgs(enc_input_data[idx_sequence, time_step, :], enc_state)
-                    # We find the bias
-                    bias_size = round(self.n_res * self.bias_scale**2)
-                    dim = np.sqrt(bias_size + slm_imgs.shape[-1])
-                    self.matlab_eng.eval('macropix_size1 = ' + str(int(self.slm_size[0]/dim)) + ';', nargout=0)
-                    self.matlab_eng.eval('macropix_size2 = ' + str(int(self.slm_size[1]/dim)) + ';', nargout=0)
+                    if time_step==0:
+                        bias_size = round(self.n_res * self.bias_scale**2)
+                        dim = np.sqrt(bias_size + slm_imgs.shape[-1])
+                        self.matlab_eng.eval('macropix_size1 = ' + str(int(self.slm_size[0]/dim)) + ';', nargout=0)
+                        self.matlab_eng.eval('macropix_size2 = ' + str(int(self.slm_size[1]/dim)) + ';', nargout=0)
                     adict = {}
                     adict['phase_vecs'] = np.array(slm_imgs, dtype='uint8') # since SLM is 8bit TODO: check if without 8bit the speed or perform. is affected
                     sio.savemat('hardware_control/phase_vecs.mat', adict)
@@ -662,9 +662,9 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     cam_data_matlab = self.matlab_eng.workspace['cam_images']
                     self.state = (1-self.leak_rate)*act(
                         (np.array(cam_data_matlab._data).reshape(cam_data_matlab.size[::-1]).T).reshape(
-                            (n_sequence,-1))[:,self.cam_sampling_range]) + self.leak_rate*self.state
-                    if self.matlab_eng.workspace['missing_trigs'] > 0:
-                        warnings.warn(str(self.matlab_eng.workspace['missing_trigs']) + " number of times the trigger is missed")
+                            (n_sequence,-1))[:, self.cam_sampling_range]) + self.leak_rate*self.state
+                    # if self.matlab_eng.workspace['missing_trigs'] > 0:
+                    #     warnings.warn(str(self.matlab_eng.workspace['missing_trigs']) + " number of times the trigger is missed")
 
                 if time_step >= forget:
                     res_states[idx_sequence, time_step - forget, :] = self.state[idx_sequence, :]

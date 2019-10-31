@@ -51,14 +51,14 @@ src.ExposureMode = 'Timed';
 vid.FramesPerTrigger = 1;
 % src.PacketSize = 1500;
 vid.TriggerRepeat = Inf;
-src.ExposureTime = 7500;
+src.ExposureTime = 1100;
 % imaqmex('feature', '-gigeDisablePacketResend', true);
-src.TriggerDelay = 6000;   % 3000
+src.TriggerDelay = 3000;   % 3000
 
 % imaqmem(100000000);
 
 if exist('cam_roi', 'var')==0
-    cam_roi = [340 340];  % roi is modified when values are not multiples of 4 (strange bug)
+    cam_roi = [200 200];  % roi is modified when values are not multiples of 4 (strange bug)
 else
     cam_roi = double(cam_roi);
 end
