@@ -70,7 +70,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                  parallel_runs=None, forget=100, parallel_test_runs=1, # iterations
                  future_pred=True, pred_horizon=1, rec_pred_steps=1,  # prediction
                  train_method='ridge', train_param=1e1,  # fit
-                 raw_input_feature = False, enc_input_feature = True, # concatenated states properties
+                 raw_input_feature = False, enc_input_feature = False, # concatenated states properties
                  cam_roi=None, cam_sampling_range=None, slm_size=None, matlab_eng=None, # SLM experiment
                  random_state=None, save=0, verbose=1,  # misc
                  gridsearch=False
@@ -468,7 +468,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.yy = x
                 return x * (x < self.activation_param) + self.activation_param * (x >= self.activation_param)
             return fun
-        elif self.activation_fun == 'ceiling':
+        elif self.activation_fun == 'amplitude_ceiling':
             def fun(x):
                 amplitude = np.abs(x)
                 phase = np.imag(x)
@@ -568,8 +568,8 @@ class Reservoir(BaseEstimator, RegressorMixin):
                     self.state[idx_sequence, :] = ((1-self.leak_rate) * rand_proj + self.leak_rate * state.T).T
                 elif self.random_projection == 'fastfood':
                     x = np.concatenate((self.res_scale * self.state / np.sqrt(self.n_res),
-                        self.input_scale * enc_input_data[time_step, :].T / np.sqrt(self.input_dim),
-                        np.zeros(self.had_dim - self.n_res - self.input_dim, )))
+                                        self.input_scale * enc_input_data[time_step, :].T / np.sqrt(self.input_dim),
+                                        np.zeros(self.had_dim - self.n_res - self.input_dim, )))
                     y1 = np.multiply(self.B, x[:, np.newaxis])
                     ffht.fht(np.squeeze(y1))
                     y2 = np.take(y1, self.P, mode='wrap')
@@ -587,10 +587,14 @@ class Reservoir(BaseEstimator, RegressorMixin):
                                     + self.bias_vec)+ \
                                  (1 - self.leak_rate) * np.roll(previous_state, 1, axis=0)
                 elif self.random_projection == 'LC_simulation':
-                    mu_input = 0.01*np.abs(np.dot(enc_input_data[idx_sequence, time_step, :], self.input_w.T))
-                    self.state =  self.bias_vec + self.leak_rate * self.state + (1 -  self.leak_rate) * (
-                        (1 + mu_input)*self.state + self.state*np.dot(self.state, self.res_w.T) -  self.state **3)
+                    mu_input = np.abs(np.dot(enc_input_data[idx_sequence, time_step, :], self.input_w.T))
+                    self.state =  act(self.bias_vec + self.leak_rate * self.state + (1 -  self.leak_rate) * (
+                        (1 + mu_input)*self.state + self.state*np.dot(self.state, self.res_w.T) -  (np.abs(self.state)**2)*self.state))
                     print(self.state)
+                    # mu_input = np.dot(enc_input_data[idx_sequence, time_step, :], self.input_w.T)
+                    # self.state =  self.bias_vec + self.leak_rate * self.state + (1 -  self.leak_rate) * (
+                    #         np.abs((1 + mu_input + np.dot(self.state, self.res_w.T)))*self.state -  np.abs(self.state)**2*self.state)
+                    self.yy = self.state
                 elif self.random_projection == 'lighton opu':
                     # Create image from self.state and enc_input_data
                     state_img = self.encode(self.state, target='res').astype(np.uint8)
@@ -696,9 +700,15 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 plt.xlabel('Activation value')
                 plt.show()
 
-        input_data = raw_input_data if self.raw_input_feature else enc_input_data
+        if self.raw_input_feature:
+            input = raw_input_data[:, forget:, :]
+        elif self.enc_input_feature:
+            input = enc_input_data[:, forget:, :]
+        else:
+            input = None
+        return self.get_concat_states(res_states, input)
 
-        return self.get_concat_states(res_states, input_data[:, forget:, :])
+
 
     def get_concat_states(self, res, input):
         """
@@ -718,7 +728,7 @@ class Reservoir(BaseEstimator, RegressorMixin):
                 self.neurons_to_remove = mean_res_states.argsort()[-self.n_saturated_neurons:][::-1]
             res = np.delete(res, self.neurons_to_remove, axis=2)
 
-        concat_states = np.concatenate((res, input), axis=2)
+        concat_states = np.concatenate((res, input), axis=2) if input is not None else res
 
         if self.parallel_res > 1:
             n_sequence, sequence_length, concat_dim = concat_states.shape
